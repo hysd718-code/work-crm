@@ -153,8 +153,8 @@ export function renderClientDetail(root, id) {
     <div class="card p-4">
       <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
         <div><label class="label !mt-0">文件类型</label><select id="up-type" class="input">${FILE_TYPES.map((t) => `<option value="${t.v}">${t.l}</option>`).join('')}</select></div>
-        <div id="up-kind-wrap" class="hidden"><label class="label !mt-0">检查类型（必选）</label>
-          <select id="up-kind" class="input"><option value="">— 选择检查类型 —</option>${REPORT_KINDS.map((k) => `<option value="${k.v}">${k.l}</option>`).join('')}</select></div>
+        <div id="up-kind-wrap"><label class="label !mt-0">检查类型（仅「检查报告」可选）</label>
+          <select id="up-kind" class="input" disabled><option value="">— 选择检查类型 —</option>${REPORT_KINDS.map((k) => `<option value="${k.v}">${k.l}</option>`).join('')}</select></div>
         <div id="up-custom-wrap" class="hidden"><label class="label !mt-0">检查名称（英文/西语）</label><input id="up-custom" class="input" placeholder="例如 Espirometria"></div>
         <div><label class="label !mt-0">日期</label><input id="up-date" type="date" class="input" value="${todayStr()}"></div>
       </div>
@@ -241,7 +241,8 @@ function bindUpload(root, c) {
   };
   const refresh = () => {
     const isReport = typeI.value === 'Resultados_Informe';
-    el('#up-kind-wrap').classList.toggle('hidden', !isReport);
+    kindI.disabled = !isReport; // 非「检查报告」时检查类型不可用并清空
+    if (!isReport) kindI.value = '';
     el('#up-custom-wrap').classList.toggle('hidden', !(isReport && kindI.value === 'Otros'));
     btn.disabled = !file;
     picked.textContent = file ? `已选择：${file.name}（${fmtSize(file.size)}）${isShrinkable(file) ? ' · 上传前会压缩为 JPEG' : ''}` : '';
