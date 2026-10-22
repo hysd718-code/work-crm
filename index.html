@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>工作日程 CRM</title>
+<meta name="theme-color" content="#1a73e8">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="工作CRM">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{--blue:#1a73e8;--blue-d:#1765cc;--line:#dadce0;--muted:#5f6368;--bg:#f8f9fa}
+  html,body{height:100%}
+  body{font-family:"Google Sans",Roboto,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;color:#202124;background:#fff;-webkit-tap-highlight-color:transparent}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:.35rem;height:36px;padding:0 14px;border-radius:8px;border:1px solid var(--line);background:#fff;color:#3c4043;font-size:14px;font-weight:500;cursor:pointer;transition:.15s}
+  .btn:hover{background:#f1f3f4}
+  .btn-primary{background:var(--blue);border-color:var(--blue);color:#fff}
+  .btn-primary:hover{background:var(--blue-d)}
+  .btn-danger{color:#d93025;border-color:#f3c5c1}
+  .btn-sm{height:30px;padding:0 10px;font-size:13px}
+  .btn[disabled]{opacity:.5;pointer-events:none}
+  .input{width:100%;height:40px;padding:0 12px;border:1px solid var(--line);border-radius:8px;font-size:14px;background:#fff;outline:none}
+  textarea.input{height:auto;padding:8px 12px;min-height:72px}
+  .input:focus{border-color:var(--blue);box-shadow:0 0 0 2px #d2e3fc}
+  .label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px;font-weight:500}
+  .chip{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:500}
+  .nav-item{display:flex;align-items:center;gap:12px;padding:10px 16px;border-radius:999px;color:#3c4043;font-size:14px;font-weight:500;cursor:pointer}
+  .nav-item:hover{background:#f1f3f4}
+  .nav-item.active{background:#e8f0fe;color:var(--blue)}
+  .tab-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0;font-size:11px;color:var(--muted)}
+  .tab-item.active{color:var(--blue)}
+  .ev-chip{display:block;width:100%;text-align:left;background:var(--blue);color:#fff;border-radius:4px;padding:1px 6px;font-size:11px;line-height:18px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
+  .ev-chip.allday{background:#d2e3fc;color:#174ea6}
+  .card{border:1px solid var(--line);border-radius:12px;background:#fff}
+  .hour-line{height:48px;border-top:1px solid #e8eaed}
+  .safe-bottom{padding-bottom:env(safe-area-inset-bottom)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spin{animation:spin 1s linear infinite}
+</style>
+</head>
+<body class="bg-white">
+<div class="flex h-full">
+  <!-- 侧边栏 (PC) -->
+  <aside class="hidden md:flex flex-col w-60 shrink-0 border-r border-[#dadce0] p-3 gap-1 bg-white">
+    <div class="flex items-center gap-2 px-3 py-3 mb-2">
+      <img src="icons/icon.svg" class="w-8 h-8" alt="">
+      <span class="text-lg font-medium text-[#3c4043]">工作 CRM</span>
+    </div>
+    <button id="side-new" class="btn btn-primary mb-3 h-11 rounded-full shadow">＋ 新建</button>
+    <a href="#/calendar" data-nav="calendar" class="nav-item">📅 日程</a>
+    <a href="#/clients" data-nav="clients" class="nav-item">👥 客户</a>
+    <a href="#/settings" data-nav="settings" class="nav-item">⚙️ 设置与同步</a>
+    <div class="mt-auto text-xs text-[#5f6368] px-3 pb-2" id="side-sync-info"></div>
+    <button id="install-btn" class="btn btn-sm hidden">安装到桌面</button>
+  </aside>
+
+  <div class="flex-1 min-w-0 flex flex-col">
+    <!-- 顶栏 -->
+    <header class="h-14 shrink-0 border-b border-[#dadce0] flex items-center gap-2 px-3 md:px-5 bg-white">
+      <div class="md:hidden flex items-center gap-2">
+        <img src="icons/icon.svg" class="w-7 h-7" alt="">
+      </div>
+      <h1 id="page-title" class="text-lg md:text-xl font-normal text-[#3c4043] truncate">日程</h1>
+      <div class="ml-auto flex items-center gap-2">
+        <span id="offline-badge" class="chip bg-[#fef7e0] text-[#b06000] hidden">离线</span>
+        <button id="sync-btn" class="btn btn-sm" title="立即同步">
+          <svg id="sync-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M18.5 2v4h-4M5.5 22v-4h4"/></svg>
+          <span id="sync-label">同步</span>
+        </button>
+      </div>
+    </header>
+
+    <main id="view" class="flex-1 overflow-y-auto bg-white"></main>
+
+    <!-- 底部导航 (手机) -->
+    <nav class="md:hidden shrink-0 flex border-t border-[#dadce0] bg-white safe-bottom">
+      <a href="#/calendar" data-nav="calendar" class="tab-item">📅<span>日程</span></a>
+      <a href="#/clients" data-nav="clients" class="tab-item">👥<span>客户</span></a>
+      <a href="#/settings" data-nav="settings" class="tab-item">⚙️<span>设置</span></a>
+    </nav>
+  </div>
+</div>
+
+<!-- 手机悬浮按钮 -->
+<button id="fab" class="md:hidden fixed right-4 bottom-20 w-14 h-14 rounded-2xl bg-[#1a73e8] text-white text-3xl shadow-lg flex items-center justify-center" style="margin-bottom:env(safe-area-inset-bottom)">＋</button>
+
+<div id="modal-root"></div>
+<div id="toast-root" class="fixed left-1/2 -translate-x-1/2 bottom-24 md:bottom-8 z-[100] flex flex-col gap-2 items-center pointer-events-none"></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
