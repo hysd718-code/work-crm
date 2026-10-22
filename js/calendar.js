@@ -1,6 +1,6 @@
 // 日历：月 / 周 / 日 / 列表视图（Google Calendar 风格），行程新增、详情、客户联动
 import { state, live, getClient, save, remove } from './store.js';
-import { $, $$, esc, pad, ymd, parseYmd, todayStr, addDays, toMin, fromMin, WEEK, openModal, confirmDialog, toast } from './util.js';
+import { $, $$, esc, normName, pad, ymd, parseYmd, todayStr, addDays, toMin, fromMin, WEEK, openModal, confirmDialog, toast } from './util.js';
 import { openClientForm } from './clients.js';
 
 const cal = { view: localStorage.getItem('crm.calview') || (innerWidth < 768 ? 'agenda' : 'month'), cursor: new Date() };
@@ -189,8 +189,8 @@ export function openEventForm(ev, defaults = {}) {
   <form class="p-5" autocomplete="off">
     <h2 class="text-lg font-medium mb-1">${ev ? '编辑行程' : '新建行程'}</h2>
     <label class="label">关联客户（输入或选择）</label>
-    <input name="client" list="client-list" class="input" placeholder="客户姓名" value="${esc(startName)}">
-    <datalist id="client-list">${live('clients').map((c) => `<option value="${esc(c.name)}">${esc(c.pinyin || '')}</option>`).join('')}</datalist>
+    <input name="client" list="client-list" class="input" placeholder="拼音姓名，如 ZHANG SAN" value="${esc(startName)}">
+    <datalist id="client-list">${live('clients').map((c) => `<option value="${esc(c.name)}"></option>`).join('')}</datalist>
     <label class="label">标题（可选，默认用客户姓名）</label>
     <input name="title" class="input" value="${esc(e.title || '')}">
     <div class="grid grid-cols-2 gap-3">
@@ -223,7 +223,8 @@ export function openEventForm(ev, defaults = {}) {
     const name = (f.client || '').trim();
     let clientId = '';
     if (name) {
-      const hit = live('clients').find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
+      const key = normName(name);
+      const hit = key && live('clients').find((c) => c.name === key);
       if (hit) clientId = hit.id;
       else {
         // 客户不存在 → 提示并快速跳转建档；建档完成后回到本行程表单并自动关联

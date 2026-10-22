@@ -33,12 +33,13 @@ icons/
    - 已获授权的 JavaScript 来源：`http://localhost:8080`、`https://<user>.github.io`（只写来源，不带路径）。
    - 无需「重定向 URI」，无需 API Key，无需 Client Secret。
 4. 把客户端 ID 填入应用「设置」→「保存并授权测试」。
-5. 上传文件时自动创建 `Work_CRM_Storage / 客户拼音 / 文件`，重命名规则 `客户拼音_YYYYMMDD_文件类型.扩展名`（同名自动加 `_2`）。
+5. 上传文件时自动创建 `Work_CRM_Storage / ZHANG_SAN / 文件`。客户姓名直接用大写拼音（姓 名 之间一个空格），文件名把空格换成下划线：`ZHANG_SAN_20261022_Receta.pdf`；检查报告会带检查类型：`ZHANG_SAN_20261022_Resultados_Informe_Ecografia.pdf`（同名自动加 `_2`）。
+6. 上传按钮支持「拍照」与「相册/文件」；超过 1.5 MB 的图片会压缩为 JPEG（长边 2200px），PDF 不处理。
 
 ### 注意
 - `drive.file` 只能访问**本应用创建**的文件；手动拖进该文件夹的文件不会被列出/预览。
 - 令牌模型无刷新令牌，约 1 小时过期，之后再次上传/预览会弹出授权窗口。
-- 同一拼音的两位客户会共用一个文件夹（文件名含日期与类型，必要时可在客户表单中手动改拼音以区分，如 `ZHANGSAN2`）。
+- 同名客户会共用一个文件夹；如需区分，可在姓名后加数字，如 `ZHANG SAN 2`。
 
 ## 同步规则
 - 逐条记录比较 `updatedAt`，新者胜；删除以墓碑（`deleted:true`）传播。

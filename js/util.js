@@ -65,19 +65,21 @@ async function loadPinyin() {
   try { pp = await import('https://cdn.jsdelivr.net/npm/pinyin-pro/+esm'); } catch { pp = false; }
   return pp;
 }
-export async function pinyinUpper(name) {
-  const s = (name || '').trim();
-  if (!s) return '';
-  const lib = await loadPinyin();
-  let out = s;
-  if (lib && lib.pinyin && /[一-鿿]/.test(s)) {
-    try {
-      const arr = lib.pinyin(s, { toneType: 'none', type: 'array', nonZh: 'consecutive' });
-      out = arr.join('');
-    } catch { /* 使用原文 */ }
-  }
-  return out.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+// 姓名规范：大写拼音，姓与名之间/多个词之间仅留一个空格，例如 "ZHANG SAN"
+export function normName(name) {
+  return String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase()
+    .replace(/[^A-Z0-9 \-]/g, ' ').replace(/\s+/g, ' ').trim();
 }
+// 若输入含中文：首字当作姓，其余为名（复姓请手动修改），否则只做规范化
+export async function toPinyinName(name) {
+  const s = String(name || '').trim();
+  if (!/[\u4e00-\u9fff]/.test(s)) return normName(s);
+  const lib = await loadPinyin();
+  if (!lib || !lib.pinyin) return '';
+  const arr = lib.pinyin(s.replace(/\s+/g, ''), { toneType: 'none', type: 'array' });
+  return normName(arr[0] + ' ' + arr.slice(1).join(''));
+}
+export const fileSlug = (name) => normName(name).replace(/ /g, '_'); // 空格→下划线，用于文件名/Drive 文件夹
 
 export const FILE_TYPES = [
   { v: 'Peticion_Medica', l: 'Peticion_Medica（检查申请单）' },
@@ -85,6 +87,24 @@ export const FILE_TYPES = [
   { v: 'Receta', l: 'Receta（处方/用药单）' },
   { v: 'ID_Doc', l: 'ID_Doc（证件/医疗卡）' },
   { v: 'Otros', l: 'Otros（其他）' },
+];
+export const REPORT_KINDS = [
+  { v: 'Analitica', l: '验血/化验单 Analítica' },
+  { v: 'Orina', l: '尿检 Orina' },
+  { v: 'Ecografia', l: '彩超 Ecografía' },
+  { v: 'Radiografia', l: 'X光 Radiografía' },
+  { v: 'TAC', l: 'CT TAC' },
+  { v: 'RMN', l: '核磁 RMN' },
+  { v: 'ECG', l: '心电图 ECG' },
+  { v: 'Mamografia', l: '乳腺钼靶 Mamografía' },
+  { v: 'Otros', l: '其他 Otros（自定义）' },
+];
+export const MED_FIELDS = [
+  { k: 'conditions', zh: '基础病', es: 'Enfermedades de base' },
+  { k: 'allergies', zh: '过敏史', es: 'Alergias' },
+  { k: 'meds', zh: '用药史', es: 'Medicación habitual' },
+  { k: 'surgeries', zh: '手术史', es: 'Antecedentes quirúrgicos' },
+  { k: 'notes', zh: '备注/补充说明', es: 'Observaciones' },
 ];
 export const STATUSES = [
   { v: '新建', cls: 'bg-[#e8f0fe] text-[#1967d2]' },
@@ -94,6 +114,7 @@ export const STATUSES = [
 ];
 export const statusCls = (v) => (STATUSES.find((s) => s.v === v) || STATUSES[0]).cls;
 
-export function buildFileName(pinyin, date, type, ext) {
-  return `${pinyin || 'UNKNOWN'}_${date.replaceAll('-', '')}_${type}.${ext}`;
+// 例：ZHANG_SAN_20261022_Resultados_Informe_Ecografia.pdf（sub 仅检查报告使用）
+export function buildFileName(slug, date, type, ext, sub = '') {
+  return `${slug || 'UNKNOWN'}_${date.replaceAll('-', '')}_${type}${sub ? '_' + sub : ''}.${ext}`;
 }
