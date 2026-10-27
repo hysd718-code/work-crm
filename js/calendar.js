@@ -1,5 +1,6 @@
 // 日历：月 / 周 / 日 / 列表视图（Google Calendar 风格），行程新增、详情、客户联动
-import { state, live, getClient, save, remove } from './store.js';
+import { state, live, getClient, save, remove, listPresets, presetLabel, composeNotes } from './store.js';
+import { attachAddress } from './google.js';
 import { $, $$, esc, normName, pad, ymd, parseYmd, todayStr, addDays, toMin, fromMin, WEEK, openModal, confirmDialog, toast } from './util.js';
 import { openClientForm } from './clients.js';
 
@@ -162,6 +163,7 @@ export function openEventDetail(id) {
     </div>
     <dl class="mt-4 space-y-3 text-sm">
       <div><dt class="text-xs text-[#5f6368]">关联客户</dt><dd>${c ? esc(c.name) : esc(e.clientName || '—') + (e.clientId ? '（客户已删除）' : '')}</dd></div>
+      ${e.doctor ? `<div><dt class="text-xs text-[#5f6368]">医生</dt><dd>${esc(e.doctor)}</dd></div>` : ''}
       <div><dt class="text-xs text-[#5f6368]">地点</dt><dd>${e.location ? `<a class="text-[#1a73e8]" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(e.location)}">${esc(e.location)}</a>` : '—'}</dd></div>
       <div><dt class="text-xs text-[#5f6368]">备注</dt><dd class="whitespace-pre-line">${esc(e.notes) || '—'}</dd></div>
     </dl>
@@ -199,10 +201,14 @@ export function openEventForm(ev, defaults = {}) {
       <div data-t><label class="label">开始</label><input name="start" type="time" class="input" value="${esc(e.start || '09:00')}"></div>
       <div data-t><label class="label">结束</label><input name="end" type="time" class="input" value="${esc(e.end || '10:00')}"></div>
     </div>
-    <label class="label">地点</label>
+    <label class="label" style="color:#1967d2">科室 / 医生（来自「科室库」，选一项自动填写）</label>
+    <select name="preset" class="input"><option value="">— 手动填写 —</option>${listPresets().map((p) => `<option value="${esc(p.id)}" ${p.id === e.presetId ? 'selected' : ''}>${esc(presetLabel(p))}</option>`).join('')}</select>
+    <label class="label">医生（可选）</label>
+    <input name="doctor" class="input" value="${esc(e.doctor || '')}">
+    <label class="label">地点（输入部分地址，选谷歌地图联想）</label>
     <input name="location" class="input" value="${esc(e.location || '')}" placeholder="医院 / 科室 / 地址">
-    <label class="label">备注说明</label>
-    <textarea name="notes" class="input">${esc(e.notes || '')}</textarea>
+    <label class="label">备注 / 注意事项</label>
+    <textarea name="notes" class="input" rows="5">${esc(ev ? (e.notes || '') : (e.notes ?? composeNotes(null)))}</textarea>
     <div class="flex justify-end gap-2 mt-5">
       <button type="button" class="btn" data-close>取消</button>
       <button type="submit" class="btn btn-primary">保存</button>
@@ -211,6 +217,24 @@ export function openEventForm(ev, defaults = {}) {
   const form = $('form', m.el);
   const toggle = () => $$('[data-t]', form).forEach((x) => (x.style.display = form.elements.allDay.checked ? 'none' : ''));
   form.elements.allDay.onchange = toggle; toggle();
+  attachAddress(form.elements.location);
+
+  // 选科室：自动填医生/地址/备注。只覆盖「还是自动填的」内容；用户手改过的不动
+  const presetOf = (id) => live('presets').find((p) => p.id === id);
+  const autoOf = (p) => ({ doctor: p?.doctor || '', location: p?.address || '', notes: composeNotes(p) });
+  let auto = autoOf(ev ? presetOf(e.presetId) : null);
+  if (!ev) auto.notes = composeNotes(null);
+  form.elements.preset.onchange = () => {
+    const p = presetOf(form.elements.preset.value), next = autoOf(p);
+    let kept = false;
+    for (const k of ['doctor', 'location', 'notes']) {
+      const el = form.elements[k];
+      if (!el.value.trim() || el.value === auto[k]) el.value = next[k];
+      else if (next[k] && el.value !== next[k]) kept = true;
+    }
+    auto = next;
+    if (kept) toast('有已手改的内容未被覆盖', 'info');
+  };
   form.elements.start.onchange = () => { // 开始时间变化时，结束时间自动顺延 1 小时
     const s = toMin(form.elements.start.value); if (toMin(form.elements.end.value) <= s) form.elements.end.value = fromMin(Math.min(s + 60, 1439));
   };
@@ -249,6 +273,8 @@ export function openEventForm(ev, defaults = {}) {
       allDay,
       start: allDay ? '' : f.start,
       end: allDay ? '' : f.end,
+      presetId: f.preset || '',
+      doctor: (f.doctor || '').trim(),
       location: (f.location || '').trim(),
       notes: (f.notes || '').trim(),
     });

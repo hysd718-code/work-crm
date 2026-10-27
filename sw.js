@@ -1,11 +1,11 @@
 // Service Worker：本地资源预缓存 + CDN 资源运行时缓存；GitHub / Google API 一律走网络
-const VERSION = 'crm-v3';
+const VERSION = 'crm-v4';
 const CORE = [
   './', 'index.html', 'manifest.json',
-  'js/app.js', 'js/util.js', 'js/store.js', 'js/sync.js', 'js/drive.js', 'js/calendar.js', 'js/clients.js', 'js/settings.js',
+  'js/app.js', 'js/util.js', 'js/store.js', 'js/sync.js', 'js/drive.js', 'js/calendar.js', 'js/clients.js', 'js/settings.js', 'js/google.js', 'js/library.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
-const NETWORK_ONLY = ['api.github.com', 'googleapis.com', 'accounts.google.com', 'www.google.com'];
+const NETWORK_ONLY = ['api.github.com', 'googleapis.com', 'accounts.google.com', 'www.google.com', 'gstatic.com'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(CORE)).then(() => self.skipWaiting()));

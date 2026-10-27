@@ -2,6 +2,7 @@
 import { state, live, getClient, save, remove } from './store.js';
 import { $, $$, esc, openModal, confirmDialog, toast, normName, toPinyinName, fileSlug, todayStr, fmtSize, FILE_TYPES, REPORT_KINDS, MED_FIELDS, STATUSES, statusCls, buildFileName } from './util.js';
 import * as Drive from './drive.js';
+import { hasKey, translate } from './google.js';
 
 let listFilter = { q: '', status: '' };
 const kindLabel = (v) => REPORT_KINDS.find((k) => k.v === v)?.l || v;
@@ -51,9 +52,10 @@ export function openClientForm(client, { prefillName = '', onSaved } = {}) {
     <div class="mt-3">
       <div class="text-sm font-medium">${m.zh} <span class="text-[#5f6368] font-normal">/ ${m.es}</span></div>
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-        <textarea name="${m.k}_zh" class="input" rows="2" placeholder="中文">${esc(c[m.k + '_zh'] || '')}</textarea>
-        <textarea name="${m.k}_es" class="input" rows="2" placeholder="Español">${esc(c[m.k + '_es'] || '')}</textarea>
+        <div><textarea name="${m.k}_zh" class="input" rows="2" placeholder="中文">${esc(c[m.k + '_zh'] || '')}</textarea><div class="text-[11px] text-[#1967d2] min-h-[16px]" data-b="${m.k}_zh"></div></div>
+        <div><textarea name="${m.k}_es" class="input" rows="2" placeholder="Español">${esc(c[m.k + '_es'] || '')}</textarea><div class="text-[11px] text-[#1967d2] min-h-[16px]" data-b="${m.k}_es"></div></div>
       </div>
+      ${hasKey() ? `<div class="flex gap-3 mt-1 text-xs"><button type="button" class="text-[#1a73e8]" data-re="${m.k}:zh">用中文重译西语</button><button type="button" class="text-[#1a73e8]" data-re="${m.k}:es">用西语重译中文</button></div>` : ''}
     </div>`).join('');
 
   const m = openModal(`
@@ -82,6 +84,43 @@ export function openClientForm(client, { prefillName = '', onSaved } = {}) {
   const nameI = form.elements.name, hint = $('#name-hint', m.el);
   const refreshHint = () => { hint.innerHTML = `文件名与云端文件夹将写作：<b>${esc(fileSlug(nameI.value) || 'ZHANG_SAN')}</b>。输入中文会自动转拼音（首字作姓，复姓请手动改）。`; };
   nameI.oninput = refreshHint;
+
+  /* ---- 中西自动互译：只翻译这几个医疗字段；对方已有手填内容时不覆盖；译文打「自动翻译」标记 ---- */
+  const auto = {};
+  MED_FIELDS.forEach((mf) => ['zh', 'es'].forEach((s) => { auto[mf.k + '_' + s] = !!c[mf.k + '_' + s + '_auto']; }));
+  const badge = (name, txt) => { const b = $(`[data-b="${name}"]`, m.el); if (b) b.textContent = txt; };
+  const showBadges = () => Object.keys(auto).forEach((n) => badge(n, auto[n] ? '自动翻译 · 请核对' : ''));
+  showBadges();
+  const LANG = { zh: 'zh-CN', es: 'es' };
+  async function doTranslate(k, from, force) {
+    const to = from === 'zh' ? 'es' : 'zh';
+    const src = form.elements[k + '_' + from], dst = form.elements[k + '_' + to];
+    const text = src.value.trim();
+    if (!text || !hasKey()) return;
+    if (!force && dst.value.trim() && !auto[dst.name]) return; // 对方是手填的，不覆盖
+    if (!navigator.onLine) return badge(dst.name, '离线：联网后点下方「重译」');
+    badge(dst.name, '翻译中…');
+    try {
+      const out = await translate(text, LANG[from], LANG[to]);
+      if (src.value.trim() !== text) return showBadges(); // 翻译期间原文又改了，丢弃过期结果
+      dst.value = out; auto[dst.name] = true; auto[src.name] = false;
+    } catch (e) { toast(e.message, 'error', 5000); }
+    showBadges();
+  }
+  MED_FIELDS.forEach((mf) => ['zh', 'es'].forEach((s) => {
+    const ta = form.elements[mf.k + '_' + s];
+    ta.addEventListener('input', () => { auto[ta.name] = false; badge(ta.name, ''); });
+    ta.addEventListener('focus', () => { ta.dataset.v = ta.value; });
+    ta.addEventListener('blur', () => { if (ta.value !== ta.dataset.v) doTranslate(mf.k, s, false); });
+  }));
+  m.el.querySelectorAll('[data-re]').forEach((b) => {
+    b.onclick = async () => {
+      const [k, from] = b.dataset.re.split(':');
+      const dst = form.elements[k + '_' + (from === 'zh' ? 'es' : 'zh')];
+      if (dst.value.trim() && !auto[dst.name] && !(await confirmDialog('对方已有你手填的内容，重译会覆盖它。继续？', { ok: '覆盖重译' }))) return;
+      doTranslate(k, from, true);
+    };
+  });
   nameI.onblur = async () => { // 失焦时规范化；含中文则转拼音
     const v = await toPinyinName(nameI.value);
     if (v) nameI.value = v;
@@ -96,7 +135,8 @@ export function openClientForm(client, { prefillName = '', onSaved } = {}) {
     if (live('clients').some((x) => x.id !== c.id && x.name === name)) {
       if (!(await confirmDialog(`已存在同名客户「${name}」。\n同名客户会共用同一个云端文件夹，仍要保存吗？`))) return;
     }
-    const rec = save('clients', { ...c, ...f, name, pinyin: fileSlug(name), files: c.files || [] });
+    const flags = Object.fromEntries(Object.entries(auto).map(([n, v]) => [n + '_auto', v]));
+    const rec = save('clients', { ...c, ...f, ...flags, name, pinyin: fileSlug(name), files: c.files || [] });
     m.close();
     toast('客户已保存', 'ok');
     onSaved && onSaved(rec);
@@ -111,7 +151,8 @@ export function openClientForm(client, { prefillName = '', onSaved } = {}) {
 const bi = (c, k) => {
   const zh = (c[k + '_zh'] || '').trim(), es = (c[k + '_es'] || '').trim();
   if (!zh && !es) return '—';
-  return [zh && `<div><span class="text-[10px] px-1 rounded bg-[#f1f3f4] text-[#5f6368] mr-1">中</span>${esc(zh)}</div>`, es && `<div><span class="text-[10px] px-1 rounded bg-[#f1f3f4] text-[#5f6368] mr-1">ES</span>${esc(es)}</div>`].filter(Boolean).join('');
+  const at = (s) => (c[k + '_' + s + '_auto'] ? ' <span class="text-[10px] px-1 rounded bg-[#e8f0fe] text-[#1967d2]">自动翻译</span>' : '');
+  return [zh && `<div><span class="text-[10px] px-1 rounded bg-[#f1f3f4] text-[#5f6368] mr-1">中</span>${esc(zh)}${at('zh')}</div>`, es && `<div><span class="text-[10px] px-1 rounded bg-[#f1f3f4] text-[#5f6368] mr-1">ES</span>${esc(es)}${at('es')}</div>`].filter(Boolean).join('');
 };
 
 export function renderClientDetail(root, id) {

@@ -4,10 +4,11 @@ import { $, $$, toast } from './util.js';
 import { renderCalendar, openEventForm, gotoDate } from './calendar.js';
 import { renderClients, renderClientDetail, openClientForm } from './clients.js';
 import { renderSettings } from './settings.js';
+import { renderLibrary } from './library.js';
 import { syncAll, syncConfigured, isSyncing } from './sync.js';
 
 const view = $('#view');
-const TITLES = { calendar: '日程', clients: '客户', client: '客户档案', settings: '设置与同步' };
+const TITLES = { calendar: '日程', clients: '客户', client: '客户档案', library: '科室库', settings: '设置与同步' };
 
 function route() {
   const raw = location.hash.replace(/^#\/?/, '') || 'calendar';
@@ -21,13 +22,14 @@ function render() {
   const r = route();
   $('#page-title').textContent = TITLES[r.name];
   $$('[data-nav]').forEach((a) => a.classList.toggle('active', a.dataset.nav === (r.name === 'client' ? 'clients' : r.name)));
-  $('#fab').style.display = r.name === 'settings' || r.name === 'client' ? 'none' : '';
+  $('#fab').style.display = r.name === 'settings' || r.name === 'client' || r.name === 'library' ? 'none' : '';
   const keepScroll = view.scrollTop;
   if (r.name === 'calendar') { if (r.params.get('d')) gotoDate(r.params.get('d')); view.className = 'flex-1 overflow-hidden bg-white'; renderCalendar(view); }
   else {
     view.className = 'flex-1 overflow-y-auto bg-white';
     if (r.name === 'clients') renderClients(view);
     else if (r.name === 'client') renderClientDetail(view, r.arg);
+    else if (r.name === 'library') renderLibrary(view);
     else renderSettings(view);
     view.scrollTop = keepScroll;
   }

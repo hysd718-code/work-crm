@@ -89,7 +89,8 @@ export async function syncAll() {
   window.dispatchEvent(new Event('crm:sync-start'));
   try {
     await syncOne('clients', 'clients.json');
-    await syncOne('events', 'events.json'); // 两个文件须串行（官方文档要求同一仓库内写入串行）
+    await syncOne('events', 'events.json'); // 文件须串行（官方文档要求同一仓库内写入串行）
+    await syncOne('presets', 'presets.json');
     saveMeta({ lastSync: new Date().toISOString() });
     window.dispatchEvent(new CustomEvent('crm:sync-end', { detail: { ok: true } }));
     window.dispatchEvent(new Event('crm:render'));

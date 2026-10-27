@@ -3,6 +3,7 @@ import { state, saveSettings, exportAll, importAll, clearLocal } from './store.j
 import { $, esc, toast, confirmDialog } from './util.js';
 import { syncAll, syncConfigured } from './sync.js';
 import { getToken } from './drive.js';
+import { suggest, translate } from './google.js';
 
 export function renderSettings(root) {
   const s = state.settings;
@@ -40,6 +41,19 @@ export function renderSettings(root) {
     </section>
 
     <section class="card p-4">
+      <h2 class="font-medium mb-1">Google 地图联想与自动翻译</h2>
+      <p class="text-xs text-[#5f6368]">一个 API 密钥同时用于：行程地址联想（Places API (New)）和客户档案中西互译（Cloud Translation）。翻译只发送「基础病/过敏/用药/手术/备注」文字，不发送姓名、电话、卡号。密钥请在 Google Cloud 限制为仅 <code>hysd718-code.github.io/*</code> 网址、仅这两个 API。</p>
+      <label class="label">API 密钥</label>
+      <input id="s-gkey" type="password" class="input" placeholder="AIza…" value="${esc(s.googleApiKey)}" autocomplete="off">
+      <div class="flex flex-wrap gap-2 mt-3">
+        <button id="s-gksave" class="btn">保存</button>
+        <button id="s-gktest-p" class="btn">测试地址联想</button>
+        <button id="s-gktest-t" class="btn">测试翻译</button>
+      </div>
+      <div id="s-gktest-out" class="text-xs text-[#5f6368] mt-2 whitespace-pre-line"></div>
+    </section>
+
+    <section class="card p-4">
       <h2 class="font-medium mb-2">备份与重置</h2>
       <div class="flex flex-wrap gap-2">
         <button id="s-export" class="btn">导出 JSON 备份</button>
@@ -67,6 +81,19 @@ export function renderSettings(root) {
   $('#s-gauth', root).onclick = async () => {
     saveSettings({ googleClientId: $('#s-gid', root).value.trim() });
     try { await getToken(true); toast('Google Drive 授权成功', 'ok'); } catch (e) { toast(e.message, 'error', 6000); }
+  };
+  const out = $('#s-gktest-out', root);
+  const saveKey = () => saveSettings({ googleApiKey: $('#s-gkey', root).value.trim() });
+  $('#s-gksave', root).onclick = () => { saveKey(); toast('已保存（地址联想需刷新页面后生效）', 'ok'); };
+  $('#s-gktest-p', root).onclick = async () => {
+    saveKey(); out.textContent = '测试中…';
+    try { const r = await suggest('Hospital Germans Trias Badalona'); out.textContent = r.length ? '成功，示例结果：\n' + r.slice(0, 3).join('\n') : '请求成功但没有结果'; }
+    catch (e) { out.textContent = '失败：' + (e.message || e); }
+  };
+  $('#s-gktest-t', root).onclick = async () => {
+    saveKey(); out.textContent = '测试中…';
+    try { out.textContent = '成功：高血压 → ' + (await translate('高血压', 'zh-CN', 'es')); }
+    catch (e) { out.textContent = '失败：' + e.message; }
   };
   $('#s-export', root).onclick = () => {
     const a = document.createElement('a');

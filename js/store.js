@@ -4,6 +4,7 @@ import { uid } from './util.js';
 const K = {
   clients: 'crm.clients.v1',
   events: 'crm.events.v1',
+  presets: 'crm.presets.v1',
   settings: 'crm.settings.v1',
   meta: 'crm.meta.v1',
 };
@@ -12,9 +13,10 @@ const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; 
 export const state = {
   clients: load(K.clients, []),
   events: load(K.events, []),
+  presets: load(K.presets, []), // 常用科室/医生；id='general' 的一条是「所有预约通用提醒」
   settings: {
     token: '', repo: '', branch: 'main', dir: 'data',
-    googleClientId: '', driveRootId: '', autoSync: true,
+    googleClientId: '', googleApiKey: '', driveRootId: '', autoSync: true,
     ...load(K.settings, {}),
   },
   meta: load(K.meta, { lastSync: null }),
@@ -25,6 +27,16 @@ const notify = () => window.dispatchEvent(new Event('crm:render'));
 
 export const live = (col) => state[col].filter((r) => !r.deleted);
 export const getClient = (id) => live('clients').find((c) => c.id === id);
+
+export const DEFAULT_GENERAL = '请携带：居留证件、医疗卡、检查单或病历。';
+export const getGeneralNote = () => {
+  const g = live('presets').find((p) => p.id === 'general');
+  return g ? g.text || '' : DEFAULT_GENERAL;
+};
+export const listPresets = () => live('presets').filter((p) => p.id !== 'general')
+  .sort((a, b) => `${a.hospital}${a.dept}${a.doctor}`.localeCompare(`${b.hospital}${b.dept}${b.doctor}`));
+export const presetLabel = (p) => [p.hospital, p.dept, p.doctor].filter(Boolean).join(' · ');
+export const composeNotes = (p) => [getGeneralNote(), p && p.note].map((x) => (x || '').trim()).filter(Boolean).join('\n');
 
 // source: 'local'（用户操作，触发自动同步） | 'sync'
 export function save(col, rec, source = 'local') {
@@ -63,7 +75,7 @@ export function saveMeta(patch) {
 }
 
 export function exportAll() {
-  return JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), clients: state.clients, events: state.events }, null, 2);
+  return JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), clients: state.clients, events: state.events, presets: state.presets }, null, 2);
 }
 export function importAll(text) {
   const d = JSON.parse(text);
@@ -75,6 +87,7 @@ export function importAll(text) {
   };
   replaceAll('clients', merge(state.clients, d.clients));
   replaceAll('events', merge(state.events, d.events));
+  if (Array.isArray(d.presets)) replaceAll('presets', merge(state.presets, d.presets));
   notify();
 }
 export function clearLocal() {
