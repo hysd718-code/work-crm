@@ -70,7 +70,7 @@ async function syncOne(col, file) {
     const merged = merge(state[col], Array.isArray(data) ? data : []);
     replaceAll(col, merged);
     const sortedRemote = JSON.stringify([...(Array.isArray(data) ? data : [])].sort((a, b) => (a.id < b.id ? -1 : 1)));
-    if (JSON.stringify(merged) === sortedRemote) return 'same';
+    if (sha && JSON.stringify(merged) === sortedRemote) return 'same'; // 远端文件不存在时(sha 为空)也要创建，即使内容为空列表
     const r = await putRemote(file, merged, sha);
     if (r.ok) return 'pushed';
     if ((r.status === 409 || r.status === 422) && attempt === 0) continue; // sha 过期：重取再合并一次
