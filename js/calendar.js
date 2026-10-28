@@ -1,6 +1,7 @@
 // 日历：月 / 周 / 日 / 列表视图（Google Calendar 风格），行程新增、详情、客户联动
 import { state, live, getClient, save, remove, listHospitals, listDoctors, hospitalOf, doctorLabel, composeNotes } from './store.js';
 import { attachAddress } from './google.js';
+import { editHospital } from './library.js';
 import { $, $$, esc, normName, pad, ymd, parseYmd, todayStr, addDays, toMin, fromMin, WEEK, openModal, confirmDialog, toast } from './util.js';
 import { openClientForm } from './clients.js';
 
@@ -308,6 +309,15 @@ export function openEventForm(ev, defaults = {}) {
     cal.cursor = parseYmd(rec.date);
     m.close();
     toast('行程已保存', 'ok');
+    // 「手动填写」且填了地址：该地址还不在医院库里 → 自动新增医院（名称取地址第一段），并询问是否去完善
+    if (!f.preset && rec.location) {
+      const norm = (s) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+      const known = live('hospitals').some((h) => norm(h.address || '') === norm(rec.location) || norm(h.name) === norm(rec.location));
+      if (!known) {
+        const h = save('hospitals', { name: rec.location.split(',')[0].trim() || rec.location, address: rec.location, phone: '', hours: '', other: '' });
+        if (await confirmDialog('已添加新的医院，是否前往完善信息？', { ok: '是', cancel: '跳过' })) editHospital(h.id);
+      }
+    }
   };
   return m;
 }

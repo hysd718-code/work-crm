@@ -36,6 +36,13 @@ export function renderLibrary(root) {
   root.querySelectorAll('[data-add-doc]').forEach((b) => { b.onclick = () => openDoctorForm(null, b.dataset.addDoc); });
 }
 
+// 从别处跳转并直接打开某家医院的编辑表单
+export function editHospital(id) {
+  tab = 'h'; q = '';
+  location.hash = '#/library';
+  setTimeout(() => { const h = hospitalOf(id); if (h) openHospitalForm(h); }, 50);
+}
+
 const empty = (t) => `<div class="card p-6 text-center text-sm text-[#5f6368]">${esc(t)}</div>`;
 
 function hospitalCard(h) {
