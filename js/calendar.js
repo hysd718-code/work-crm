@@ -13,6 +13,16 @@ const evsOn = (ds) => live('events').filter((e) => e.date === ds).sort((a, b) =>
 const evTitle = (e) => e.title || getClient(e.clientId)?.name || e.clientName || '（无标题）';
 const evTime = (e) => (e.allDay ? '全天' : `${e.start}–${e.end}`);
 
+export const EV_TYPES = { trans: { label: '陪同翻译', color: '#d93025' }, none: { label: '无翻译', color: '#70757a' } };
+export const evType = (e) => (e.type === 'none' ? 'none' : 'trans'); // 旧行程没有类型，默认陪同翻译
+// 已过去：全天行程过了当天；定时行程结束时间早于现在
+export function isPast(e) {
+  const now = new Date();
+  if (e.allDay || !e.end) return e.date < ymd(now);
+  return e.date + ' ' + e.end < ymd(now) + ' ' + pad(now.getHours()) + ':' + pad(now.getMinutes());
+}
+const chipCls = (e) => `ev-chip t-${evType(e)} ${e.allDay ? 'allday' : ''} ${isPast(e) ? 'past' : ''}`;
+
 export function gotoDate(ds) { if (ds) cal.cursor = parseYmd(ds); }
 
 /* ============ 渲染 ============ */
@@ -84,7 +94,7 @@ function renderMonth(el) {
     html += `<div data-day="${ds}" class="border-r border-b border-[#e8eaed] p-1 min-h-[84px] cursor-pointer hover:bg-[#f8f9fa] ${inMonth ? '' : 'bg-[#fafafa]'}">
       <div class="text-center mb-0.5"><span class="inline-flex w-6 h-6 items-center justify-center rounded-full text-xs ${ds === today ? 'bg-[#1a73e8] text-white font-medium' : inMonth ? 'text-[#3c4043]' : 'text-[#9aa0a6]'}">${d.getDate() === 1 ? `${d.getMonth() + 1}月${d.getDate()}日` : d.getDate()}</span></div>
       <div class="flex flex-col gap-0.5">
-        ${evs.slice(0, 3).map((e) => `<button data-ev="${e.id}" class="ev-chip ${e.allDay ? 'allday' : ''}">${e.allDay ? '' : esc(e.start) + ' '}${esc(evTitle(e))}</button>`).join('')}
+        ${evs.slice(0, 3).map((e) => `<button data-ev="${e.id}" class="${chipCls(e)}">${e.allDay ? '' : esc(e.start) + ' '}${esc(evTitle(e))}</button>`).join('')}
         ${evs.length > 3 ? `<button data-day="${ds}" data-more="1" class="text-[11px] text-[#5f6368] text-left px-1 hover:underline">还有 ${evs.length - 3} 项</button>` : ''}
       </div></div>`;
   }
@@ -116,7 +126,7 @@ function renderGrid(el, days) {
       ${days.map((d) => { const ds = ymd(d); const all = evsOn(ds).filter((e) => e.allDay); return `<div class="border-l border-[#e8eaed] p-1 text-center">
         <div class="text-xs text-[#5f6368]">周${WEEK[(d.getDay() + 6) % 7]}</div>
         <div class="inline-flex w-8 h-8 items-center justify-center rounded-full text-lg ${ds === today ? 'bg-[#1a73e8] text-white' : ''}">${d.getDate()}</div>
-        ${all.map((e) => `<button data-ev="${e.id}" class="ev-chip allday mt-0.5">${esc(evTitle(e))}</button>`).join('')}</div>`; }).join('')}
+        ${all.map((e) => `<button data-ev="${e.id}" class="${chipCls({ ...e, allDay: true })} mt-0.5">${esc(evTitle(e))}</button>`).join('')}</div>`; }).join('')}
     </div>
     <div class="grid relative" style="${cols}">
       <div>${Array.from({ length: 24 }, (_, h) => `<div class="relative" style="height:${HOUR_PX}px"><span class="absolute -top-2 right-1 text-[10px] text-[#70757a]">${h ? pad(h) + ':00' : ''}</span></div>`).join('')}</div>
@@ -124,7 +134,7 @@ function renderGrid(el, days) {
         const ds = ymd(d);
         const evs = layout(evsOn(ds).filter((e) => !e.allDay));
         return `<div data-slot="${ds}" class="relative border-l border-[#e8eaed] cursor-pointer" style="height:${HOUR_PX * 24}px;background-image:linear-gradient(#e8eaed 1px,transparent 1px);background-size:100% ${HOUR_PX}px">
-          ${evs.map(({ e, s, en, col, n }) => `<button data-ev="${e.id}" class="absolute ev-chip !whitespace-normal !leading-4 !py-0.5 shadow-sm" style="top:${(s / 60) * HOUR_PX}px;height:${Math.max(((en - s) / 60) * HOUR_PX - 2, 20)}px;left:calc(${(col / n) * 100}% + 1px);width:calc(${100 / n}% - 3px)"><b>${esc(e.start)}</b> ${esc(evTitle(e))}${e.location ? `<br><span class="opacity-80">${esc(e.location)}</span>` : ''}</button>`).join('')}
+          ${evs.map(({ e, s, en, col, n }) => `<button data-ev="${e.id}" class="absolute ${chipCls(e)} !whitespace-normal !leading-4 !py-0.5 shadow-sm" style="top:${(s / 60) * HOUR_PX}px;height:${Math.max(((en - s) / 60) * HOUR_PX - 2, 20)}px;left:calc(${(col / n) * 100}% + 1px);width:calc(${100 / n}% - 3px)"><b>${esc(e.start)}</b> ${esc(evTitle(e))}${e.location ? `<br><span class="opacity-80">${esc(e.location)}</span>` : ''}</button>`).join('')}
           ${ds === today ? `<div class="absolute left-0 right-0 border-t-2 border-[#ea4335] pointer-events-none" style="top:${(nowMin / 60) * HOUR_PX}px"></div>` : ''}
         </div>`;
       }).join('')}
@@ -145,7 +155,7 @@ function renderAgenda(el) {
     <div class="text-xs text-[#5f6368] mb-2">显示 ${from} 之后的行程</div>
     ${[...groups].map(([ds, evs]) => { const d = parseYmd(ds); return `<div class="flex gap-4 py-3 border-b border-[#e8eaed]">
       <div class="w-14 text-center shrink-0"><div class="text-xs text-[#5f6368]">周${WEEK[(d.getDay() + 6) % 7]}</div><div class="text-2xl ${ds === todayStr() ? 'text-[#1a73e8]' : ''}">${d.getDate()}</div><div class="text-[11px] text-[#5f6368]">${d.getMonth() + 1}月</div></div>
-      <div class="flex-1 min-w-0 flex flex-col gap-1.5">${evs.map((e) => `<button data-ev="${e.id}" class="text-left card px-3 py-2 hover:shadow-md"><div class="text-sm font-medium truncate">${esc(evTitle(e))}</div><div class="text-xs text-[#5f6368] truncate">${evTime(e)}${e.location ? ' · ' + esc(e.location) : ''}</div></button>`).join('')}</div></div>`; }).join('') || '<div class="text-center text-[#5f6368] py-16">没有即将到来的行程</div>'}
+      <div class="flex-1 min-w-0 flex flex-col gap-1.5">${evs.map((e) => `<button data-ev="${e.id}" class="text-left card px-3 py-2 hover:shadow-md ${isPast(e) ? 'is-past' : ''}" style="border-left:4px solid ${EV_TYPES[evType(e)].color}"><div class="text-sm font-medium truncate">${esc(evTitle(e))}</div><div class="text-xs text-[#5f6368] truncate">${evTime(e)}${e.location ? ' · ' + esc(e.location) : ''}</div></button>`).join('')}</div></div>`; }).join('') || '<div class="text-center text-[#5f6368] py-16">没有即将到来的行程</div>'}
   </div>`;
 }
 
@@ -157,11 +167,12 @@ export function openEventDetail(id) {
   const m = openModal(`
   <div class="p-5">
     <div class="flex items-start gap-3">
-      <div class="w-3 h-3 rounded-sm bg-[#1a73e8] mt-2 shrink-0"></div>
+      <div class="w-3 h-3 rounded-sm mt-2 shrink-0" style="background:${EV_TYPES[evType(e)].color}"></div>
       <div class="min-w-0 flex-1"><h2 class="text-xl break-words">${esc(evTitle(e))}</h2>
       <div class="text-sm text-[#5f6368]">${esc(e.date)}（周${WEEK[(parseYmd(e.date).getDay() + 6) % 7]}） ${evTime(e)}</div></div>
     </div>
     <dl class="mt-4 space-y-3 text-sm">
+      <div><dt class="text-xs text-[#5f6368]">类型</dt><dd>${EV_TYPES[evType(e)].label}${isPast(e) ? '（已结束）' : ''}</dd></div>
       <div><dt class="text-xs text-[#5f6368]">关联客户</dt><dd>${c ? esc(c.name) : esc(e.clientName || '—') + (e.clientId ? '（客户已删除）' : '')}</dd></div>
       ${e.doctor ? `<div><dt class="text-xs text-[#5f6368]">医生</dt><dd>${esc(e.doctor)}</dd></div>` : ''}
       <div><dt class="text-xs text-[#5f6368]">地点</dt><dd>${e.location ? `<a class="text-[#1a73e8]" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(e.location)}">${esc(e.location)}</a>` : '—'}</dd></div>
@@ -190,6 +201,8 @@ export function openEventForm(ev, defaults = {}) {
   const m = openModal(`
   <form class="p-5" autocomplete="off">
     <h2 class="text-lg font-medium mb-1">${ev ? '编辑行程' : '新建行程'}</h2>
+    <label class="label">类型</label>
+    <div class="grid grid-cols-2 gap-2">${Object.entries(EV_TYPES).map(([k, t]) => `<label class="flex items-center justify-center gap-2 h-12 rounded-lg border cursor-pointer text-sm font-medium" data-type="${k}"><input type="radio" name="type" value="${k}" class="hidden" ${evType(e) === k ? 'checked' : ''}><span class="w-3.5 h-3.5 rounded-full" style="background:${t.color}"></span>${t.label}</label>`).join('')}</div>
     <label class="label">关联客户（输入或选择）</label>
     <input name="client" list="client-list" class="input" placeholder="拼音姓名，如 ZHANG SAN" value="${esc(startName)}">
     <datalist id="client-list">${live('clients').map((c) => `<option value="${esc(c.name)}"></option>`).join('')}</datalist>
@@ -218,6 +231,12 @@ export function openEventForm(ev, defaults = {}) {
   const toggle = () => $$('[data-t]', form).forEach((x) => (x.style.display = form.elements.allDay.checked ? 'none' : ''));
   form.elements.allDay.onchange = toggle; toggle();
   attachAddress(form.elements.location);
+  const paintTypes = () => form.querySelectorAll('[data-type]').forEach((l) => {
+    const on = l.querySelector('input').checked, col = EV_TYPES[l.dataset.type].color;
+    l.style.borderColor = on ? col : '#dadce0'; l.style.borderWidth = on ? '2px' : '1px'; l.style.background = on ? (l.dataset.type === 'trans' ? '#fce8e6' : '#f1f3f4') : '#fff';
+  });
+  form.querySelectorAll('input[name=type]').forEach((r) => { r.onchange = paintTypes; });
+  paintTypes();
 
   // 选科室：自动填医生/地址/备注。只覆盖「还是自动填的」内容；用户手改过的不动
   const presetOf = (id) => live('presets').find((p) => p.id === id);
@@ -273,6 +292,7 @@ export function openEventForm(ev, defaults = {}) {
       allDay,
       start: allDay ? '' : f.start,
       end: allDay ? '' : f.end,
+      type: f.type === 'none' ? 'none' : 'trans',
       presetId: f.preset || '',
       doctor: (f.doctor || '').trim(),
       location: (f.location || '').trim(),

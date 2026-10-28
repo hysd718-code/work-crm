@@ -1,5 +1,5 @@
 // Service Worker：本地资源预缓存 + CDN 资源运行时缓存；GitHub / Google API 一律走网络
-const VERSION = 'crm-v4';
+const VERSION = 'crm-v5';
 const CORE = [
   './', 'index.html', 'manifest.json',
   'js/app.js', 'js/util.js', 'js/store.js', 'js/sync.js', 'js/drive.js', 'js/calendar.js', 'js/clients.js', 'js/settings.js', 'js/google.js', 'js/library.js',

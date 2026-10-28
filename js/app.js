@@ -1,7 +1,7 @@
 // 入口：路由、导航、同步状态、PWA 注册
-import { state, saveSettings } from './store.js';
+import { state, saveSettings, live } from './store.js';
 import { $, $$, toast } from './util.js';
-import { renderCalendar, openEventForm, gotoDate } from './calendar.js';
+import { renderCalendar, openEventForm, gotoDate, isPast } from './calendar.js';
 import { renderClients, renderClientDetail, openClientForm } from './clients.js';
 import { renderSettings } from './settings.js';
 import { renderLibrary } from './library.js';
@@ -85,6 +85,11 @@ let deferred = null;
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferred = e; $('#install-btn').classList.remove('hidden'); });
 $('#install-btn').onclick = async () => { if (!deferred) return; deferred.prompt(); await deferred.userChoice; deferred = null; $('#install-btn').classList.add('hidden'); };
 
+// 每分钟只刷新「已结束」的淡化样式，不重绘页面（避免打断滚动/输入）
+setInterval(() => view.querySelectorAll('[data-ev]').forEach((b) => {
+  const e = live('events').find((x) => x.id === b.dataset.ev);
+  if (e) b.classList.toggle(b.classList.contains('ev-chip') ? 'past' : 'is-past', isPast(e));
+}), 60000);
 render();
 setSyncUi('ok');
 if (state.settings.autoSync) doSync(false);
