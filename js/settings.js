@@ -1,5 +1,5 @@
 // 设置页：GitHub 同步、Google Drive、备份与重置
-import { state, saveSettings, exportAll, importAll, clearLocal } from './store.js';
+import { state, saveSettings, exportAll, importAll, clearLocal, live, save, getGeneralNote } from './store.js';
 import { $, esc, toast, confirmDialog } from './util.js';
 import { syncAll, syncConfigured } from './sync.js';
 import { getToken } from './drive.js';
@@ -26,6 +26,13 @@ export function renderSettings(root) {
         <button id="s-sync" class="btn btn-primary">保存并立即同步</button>
         <span class="text-xs text-[#5f6368]">${state.meta.lastSync ? '上次同步：' + new Date(state.meta.lastSync).toLocaleString() : '尚未同步'}</span>
       </div>
+    </section>
+
+    <section class="card p-4">
+      <h2 class="font-medium mb-1">所有预约的通用提醒</h2>
+      <p class="text-xs text-[#5f6368]">新建行程时自动写进备注（例如要带的证件）。会随 GitHub 同步到其他设备。</p>
+      <textarea id="s-general" class="input" rows="2">${esc(getGeneralNote())}</textarea>
+      <div class="mt-2"><button id="s-gen-save" class="btn btn-sm">保存通用提醒</button></div>
     </section>
 
     <section class="card p-4">
@@ -81,6 +88,11 @@ export function renderSettings(root) {
   $('#s-gauth', root).onclick = async () => {
     saveSettings({ googleClientId: $('#s-gid', root).value.trim() });
     try { await getToken(true); toast('Google Drive 授权成功', 'ok'); } catch (e) { toast(e.message, 'error', 6000); }
+  };
+  $('#s-gen-save', root).onclick = () => {
+    const rec = live('presets').find((p) => p.id === 'general') || { id: 'general', kind: 'general' };
+    save('presets', { ...rec, text: $('#s-general', root).value.trim() });
+    toast('已保存', 'ok');
   };
   const out = $('#s-gktest-out', root);
   const saveKey = () => saveSettings({ googleApiKey: $('#s-gkey', root).value.trim() });

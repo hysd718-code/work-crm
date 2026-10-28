@@ -5,6 +5,8 @@ const K = {
   clients: 'crm.clients.v1',
   events: 'crm.events.v1',
   presets: 'crm.presets.v1',
+  hospitals: 'crm.hospitals.v1',
+  doctors: 'crm.doctors.v1',
   settings: 'crm.settings.v1',
   meta: 'crm.meta.v1',
 };
@@ -13,7 +15,9 @@ const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; 
 export const state = {
   clients: load(K.clients, []),
   events: load(K.events, []),
-  presets: load(K.presets, []), // 常用科室/医生；id='general' 的一条是「所有预约通用提醒」
+  presets: load(K.presets, []), // 仅保存 id='general'（所有预约通用提醒）；旧版「科室」记录会被迁移成医院+医生
+  hospitals: load(K.hospitals, []), // {id,name,address,phone,hours,other}
+  doctors: load(K.doctors, []), // {id,name,specialty,hospitalId,times,note,other}
   settings: {
     token: '', repo: '', branch: 'main', dir: 'data',
     googleClientId: '', googleApiKey: '', driveRootId: '', autoSync: true,
@@ -33,9 +37,27 @@ export const getGeneralNote = () => {
   const g = live('presets').find((p) => p.id === 'general');
   return g ? g.text || '' : DEFAULT_GENERAL;
 };
-export const listPresets = () => live('presets').filter((p) => p.id !== 'general')
-  .sort((a, b) => `${a.hospital}${a.dept}${a.doctor}`.localeCompare(`${b.hospital}${b.dept}${b.doctor}`));
-export const presetLabel = (p) => [p.hospital, p.dept, p.doctor].filter(Boolean).join(' · ');
+export const listHospitals = () => live('hospitals').sort((a, b) => a.name.localeCompare(b.name));
+export const hospitalOf = (id) => live('hospitals').find((h) => h.id === id);
+export const listDoctors = () => live('doctors').sort((a, b) => (hospitalOf(a.hospitalId)?.name || '').localeCompare(hospitalOf(b.hospitalId)?.name || '') || (a.name || a.specialty).localeCompare(b.name || b.specialty));
+export const doctorsOf = (hid) => listDoctors().filter((d) => d.hospitalId === hid);
+export const doctorTitle = (d) => [d.name, d.specialty].filter(Boolean).join(' · ') || '（未命名）';
+export const doctorLabel = (d) => [doctorTitle(d), hospitalOf(d.hospitalId)?.name].filter(Boolean).join(' · ');
+
+// 旧版「科室库」(hospital/dept/doctor/address/note 一条记录) → 医院 + 医生。用确定性 id，多台设备各自迁移也会合并成同一条
+export function migrateLegacyPresets() {
+  const old = live('presets').filter((p) => p.id !== 'general' && (p.hospital || p.dept || p.doctor));
+  if (!old.length) return;
+  for (const p of old) {
+    const hname = (p.hospital || '').trim() || '（未填医院）';
+    const hid = 'h-' + hname.toLowerCase().replace(/\s+/g, '-');
+    const h = state.hospitals.find((x) => x.id === hid && !x.deleted);
+    if (!h) save('hospitals', { id: hid, name: hname, address: p.address || '', phone: '', hours: '', other: '' });
+    else if (!h.address && p.address) save('hospitals', { ...h, address: p.address });
+    save('doctors', { id: 'd-' + p.id, name: p.doctor || '', specialty: p.dept || '', hospitalId: hid, times: '', note: p.note || '', other: '' });
+    remove('presets', p.id);
+  }
+}
 export const composeNotes = (p) => [getGeneralNote(), p && p.note].map((x) => (x || '').trim()).filter(Boolean).join('\n');
 
 // source: 'local'（用户操作，触发自动同步） | 'sync'
@@ -75,7 +97,7 @@ export function saveMeta(patch) {
 }
 
 export function exportAll() {
-  return JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), clients: state.clients, events: state.events, presets: state.presets }, null, 2);
+  return JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), clients: state.clients, events: state.events, presets: state.presets, hospitals: state.hospitals, doctors: state.doctors }, null, 2);
 }
 export function importAll(text) {
   const d = JSON.parse(text);
@@ -88,6 +110,8 @@ export function importAll(text) {
   replaceAll('clients', merge(state.clients, d.clients));
   replaceAll('events', merge(state.events, d.events));
   if (Array.isArray(d.presets)) replaceAll('presets', merge(state.presets, d.presets));
+  if (Array.isArray(d.hospitals)) replaceAll('hospitals', merge(state.hospitals, d.hospitals));
+  if (Array.isArray(d.doctors)) replaceAll('doctors', merge(state.doctors, d.doctors));
   notify();
 }
 export function clearLocal() {

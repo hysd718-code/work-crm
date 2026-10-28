@@ -1,5 +1,5 @@
 // 入口：路由、导航、同步状态、PWA 注册
-import { state, saveSettings, live } from './store.js';
+import { state, saveSettings, live, migrateLegacyPresets } from './store.js';
 import { $, $$, toast } from './util.js';
 import { renderCalendar, openEventForm, gotoDate, isPast } from './calendar.js';
 import { renderClients, renderClientDetail, openClientForm } from './clients.js';
@@ -8,7 +8,7 @@ import { renderLibrary } from './library.js';
 import { syncAll, syncConfigured, isSyncing } from './sync.js';
 
 const view = $('#view');
-const TITLES = { calendar: '日程', clients: '客户', client: '客户档案', library: '科室库', settings: '设置与同步' };
+const TITLES = { calendar: '日程', clients: '客户', client: '客户档案', library: '医院与医生', settings: '设置与同步' };
 
 function route() {
   const raw = location.hash.replace(/^#\/?/, '') || 'calendar';
@@ -55,6 +55,7 @@ function setSyncUi(status, msg) {
   sideInfo.textContent = msg || (syncConfigured() ? t : 'GitHub 同步未配置');
 }
 window.addEventListener('crm:sync-start', () => setSyncUi('run'));
+window.addEventListener('crm:sync-end', () => migrateLegacyPresets()); // 其他设备同步来的旧科室也迁移
 window.addEventListener('crm:sync-end', (e) => setSyncUi(e.detail.ok ? 'ok' : 'err', e.detail.ok ? '' : e.detail.error));
 
 async function doSync(manual) {
@@ -90,6 +91,7 @@ setInterval(() => view.querySelectorAll('[data-ev]').forEach((b) => {
   const e = live('events').find((x) => x.id === b.dataset.ev);
   if (e) b.classList.toggle(b.classList.contains('ev-chip') ? 'past' : 'is-past', isPast(e));
 }), 60000);
+migrateLegacyPresets();
 render();
 setSyncUi('ok');
 if (state.settings.autoSync) doSync(false);

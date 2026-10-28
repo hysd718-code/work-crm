@@ -1,5 +1,5 @@
 // 日历：月 / 周 / 日 / 列表视图（Google Calendar 风格），行程新增、详情、客户联动
-import { state, live, getClient, save, remove, listPresets, presetLabel, composeNotes } from './store.js';
+import { state, live, getClient, save, remove, listHospitals, listDoctors, hospitalOf, doctorLabel, composeNotes } from './store.js';
 import { attachAddress } from './google.js';
 import { $, $$, esc, normName, pad, ymd, parseYmd, todayStr, addDays, toMin, fromMin, WEEK, openModal, confirmDialog, toast } from './util.js';
 import { openClientForm } from './clients.js';
@@ -214,8 +214,11 @@ export function openEventForm(ev, defaults = {}) {
       <div data-t><label class="label">开始</label><input name="start" type="time" class="input" value="${esc(e.start || '09:00')}"></div>
       <div data-t><label class="label">结束</label><input name="end" type="time" class="input" value="${esc(e.end || '10:00')}"></div>
     </div>
-    <label class="label" style="color:#1967d2">科室 / 医生（来自「科室库」，选一项自动填写）</label>
-    <select name="preset" class="input"><option value="">— 手动填写 —</option>${listPresets().map((p) => `<option value="${esc(p.id)}" ${p.id === e.presetId ? 'selected' : ''}>${esc(presetLabel(p))}</option>`).join('')}</select>
+    <label class="label" style="color:#1967d2">医生 / 医院（来自「医院与医生」，选一项自动填写）</label>
+    <select name="preset" class="input"><option value="">— 手动填写 —</option>
+      <optgroup label="医生">${listDoctors().map((d) => `<option value="d:${esc(d.id)}" ${'d:' + d.id === e.presetId ? 'selected' : ''}>${esc(doctorLabel(d))}</option>`).join('')}</optgroup>
+      <optgroup label="仅医院">${listHospitals().map((h) => `<option value="h:${esc(h.id)}" ${'h:' + h.id === e.presetId ? 'selected' : ''}>${esc(h.name)}</option>`).join('')}</optgroup>
+    </select>
     <label class="label">医生（可选）</label>
     <input name="doctor" class="input" value="${esc(e.doctor || '')}">
     <label class="label">地点（输入部分地址，选谷歌地图联想）</label>
@@ -239,12 +242,16 @@ export function openEventForm(ev, defaults = {}) {
   paintTypes();
 
   // 选科室：自动填医生/地址/备注。只覆盖「还是自动填的」内容；用户手改过的不动
-  const presetOf = (id) => live('presets').find((p) => p.id === id);
-  const autoOf = (p) => ({ doctor: p?.doctor || '', location: p?.address || '', notes: composeNotes(p) });
-  let auto = autoOf(ev ? presetOf(e.presetId) : null);
-  if (!ev) auto.notes = composeNotes(null);
+  // 选医生 → 医生姓名 + 所属医院地址 + 医生注意事项；只选医院 → 仅地址
+  const autoOf = (val) => {
+    const [kind, id] = (val || '').split(/:(.*)/s);
+    if (kind === 'd') { const d = live('doctors').find((x) => x.id === id); return d ? { doctor: d.name || '', location: hospitalOf(d.hospitalId)?.address || '', notes: composeNotes(d) } : autoOf(''); }
+    if (kind === 'h') { const h = hospitalOf(id); return h ? { doctor: '', location: h.address || '', notes: composeNotes(null) } : autoOf(''); }
+    return { doctor: '', location: '', notes: composeNotes(null) };
+  };
+  let auto = autoOf(ev ? e.presetId : '');
   form.elements.preset.onchange = () => {
-    const p = presetOf(form.elements.preset.value), next = autoOf(p);
+    const next = autoOf(form.elements.preset.value);
     let kept = false;
     for (const k of ['doctor', 'location', 'notes']) {
       const el = form.elements[k];

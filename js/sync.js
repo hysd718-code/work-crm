@@ -91,6 +91,8 @@ export async function syncAll() {
     await syncOne('clients', 'clients.json');
     await syncOne('events', 'events.json'); // 文件须串行（官方文档要求同一仓库内写入串行）
     await syncOne('presets', 'presets.json');
+    await syncOne('hospitals', 'hospitals.json');
+    await syncOne('doctors', 'doctors.json');
     saveMeta({ lastSync: new Date().toISOString() });
     window.dispatchEvent(new CustomEvent('crm:sync-end', { detail: { ok: true } }));
     window.dispatchEvent(new Event('crm:render'));
