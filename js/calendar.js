@@ -14,8 +14,8 @@ const evsOn = (ds) => live('events').filter((e) => e.date === ds).sort((a, b) =>
 const evTitle = (e) => e.title || getClient(e.clientId)?.name || e.clientName || '（无标题）';
 const evTime = (e) => (e.allDay ? '全天' : `${e.start}–${e.end}`);
 
-export const EV_TYPES = { trans: { label: '陪同翻译', color: '#d93025' }, none: { label: '无翻译', color: '#70757a' } };
-export const evType = (e) => (e.type === 'none' ? 'none' : 'trans'); // 旧行程没有类型，默认陪同翻译
+export const EV_TYPES = { trans: { label: '陪同翻译', color: '#d93025', bg: '#fce8e6' }, exam: { label: '检查', color: '#1a73e8', bg: '#e8f0fe' }, none: { label: '无翻译', color: '#70757a', bg: '#f1f3f4' } };
+export const evType = (e) => (EV_TYPES[e.type] ? e.type : 'trans'); // 旧行程没有类型，默认陪同翻译
 // 已过去：全天行程过了当天；定时行程结束时间早于现在
 export function isPast(e) {
   const now = new Date();
@@ -174,6 +174,7 @@ export function openEventDetail(id) {
     </div>
     <dl class="mt-4 space-y-3 text-sm">
       <div><dt class="text-xs text-[#5f6368]">类型</dt><dd>${EV_TYPES[evType(e)].label}${isPast(e) ? '（已结束）' : ''}</dd></div>
+      ${e.exam ? `<div><dt class="text-xs text-[#5f6368]">检查项目</dt><dd>${esc(e.exam)}</dd></div>` : ''}
       <div><dt class="text-xs text-[#5f6368]">关联客户</dt><dd>${c ? esc(c.name) : esc(e.clientName || '—') + (e.clientId ? '（客户已删除）' : '')}</dd></div>
       ${e.doctor ? `<div><dt class="text-xs text-[#5f6368]">医生</dt><dd>${esc(e.doctor)}</dd></div>` : ''}
       <div><dt class="text-xs text-[#5f6368]">地点</dt><dd>${e.location ? `<a class="text-[#1a73e8]" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(e.location)}">${esc(e.location)}</a>` : '—'}</dd></div>
@@ -203,7 +204,7 @@ export function openEventForm(ev, defaults = {}) {
   <form class="p-5" autocomplete="off">
     <h2 class="text-lg font-medium mb-1">${ev ? '编辑行程' : '新建行程'}</h2>
     <label class="label">类型</label>
-    <div class="grid grid-cols-2 gap-2">${Object.entries(EV_TYPES).map(([k, t]) => `<label class="flex items-center justify-center gap-2 h-12 rounded-lg border cursor-pointer text-sm font-medium" data-type="${k}"><input type="radio" name="type" value="${k}" class="hidden" ${evType(e) === k ? 'checked' : ''}><span class="w-3.5 h-3.5 rounded-full" style="background:${t.color}"></span>${t.label}</label>`).join('')}</div>
+    <div class="grid grid-cols-3 gap-2">${Object.entries(EV_TYPES).map(([k, t]) => `<label class="flex items-center justify-center gap-2 h-12 rounded-lg border cursor-pointer text-sm font-medium" data-type="${k}"><input type="radio" name="type" value="${k}" class="hidden" ${evType(e) === k ? 'checked' : ''}><span class="w-3.5 h-3.5 rounded-full" style="background:${t.color}"></span>${t.label}</label>`).join('')}</div>
     <label class="label">关联客户（输入或选择）</label>
     <input name="client" list="client-list" class="input" placeholder="拼音姓名，如 ZHANG SAN" value="${esc(startName)}">
     <datalist id="client-list">${live('clients').map((c) => `<option value="${esc(c.name)}"></option>`).join('')}</datalist>
@@ -215,6 +216,8 @@ export function openEventForm(ev, defaults = {}) {
       <div data-t><label class="label">开始</label><input name="start" type="time" class="input" value="${esc(e.start || '09:00')}"></div>
       <div data-t><label class="label">结束</label><input name="end" type="time" class="input" value="${esc(e.end || '10:00')}"></div>
     </div>
+    <div data-exam style="display:none"><label class="label" style="color:#1a73e8">检查项目 *（检查类行程必填；必须在下方选择医院）</label>
+    <input name="exam" class="input" value="${esc(e.exam || '')}" placeholder="如：腹部彩超、验血、胸片"></div>
     <label class="label" style="color:#1967d2">医生 / 医院（来自「医院与医生」，选一项自动填写）</label>
     <select name="preset" class="input"><option value="">— 手动填写 —</option>
       <optgroup label="医生">${listDoctors().map((d) => `<option value="d:${esc(d.id)}" ${'d:' + d.id === e.presetId ? 'selected' : ''}>${esc(doctorLabel(d))}</option>`).join('')}</optgroup>
@@ -237,7 +240,8 @@ export function openEventForm(ev, defaults = {}) {
   attachAddress(form.elements.location);
   const paintTypes = () => form.querySelectorAll('[data-type]').forEach((l) => {
     const on = l.querySelector('input').checked, col = EV_TYPES[l.dataset.type].color;
-    l.style.borderColor = on ? col : '#dadce0'; l.style.borderWidth = on ? '2px' : '1px'; l.style.background = on ? (l.dataset.type === 'trans' ? '#fce8e6' : '#f1f3f4') : '#fff';
+    l.style.borderColor = on ? col : '#dadce0'; l.style.borderWidth = on ? '2px' : '1px'; l.style.background = on ? EV_TYPES[l.dataset.type].bg : '#fff';
+    const ex = form.querySelector('[data-exam]'); if (ex) ex.style.display = form.querySelector('input[name=type]:checked').value === 'exam' ? '' : 'none';
   });
   form.querySelectorAll('input[name=type]').forEach((r) => { r.onchange = paintTypes; });
   paintTypes();
@@ -271,6 +275,12 @@ export function openEventForm(ev, defaults = {}) {
     const f = Object.fromEntries(new FormData(form).entries());
     const allDay = form.elements.allDay.checked;
     if (!allDay && toMin(f.end) <= toMin(f.start)) return toast('结束时间必须晚于开始时间', 'error');
+    if (f.type === 'exam') { // 检查类：必须选医院（直接选医院，或选医生由其带出医院）+ 填检查项目
+      const [kind, id] = (f.preset || '').split(/:(.*)/s);
+      const okHosp = kind === 'h' || (kind === 'd' && live('doctors').find((x) => x.id === id)?.hospitalId);
+      if (!okHosp) return toast('「检查」必须在「医生 / 医院」里选择医院', 'error');
+      if (!(f.exam || '').trim()) return toast('请填写检查项目', 'error');
+    }
     const name = (f.client || '').trim();
     let clientId = '';
     if (name) {
@@ -300,7 +310,8 @@ export function openEventForm(ev, defaults = {}) {
       allDay,
       start: allDay ? '' : f.start,
       end: allDay ? '' : f.end,
-      type: f.type === 'none' ? 'none' : 'trans',
+      type: EV_TYPES[f.type] ? f.type : 'trans',
+      exam: f.type === 'exam' ? (f.exam || '').trim() : '',
       presetId: f.preset || '',
       doctor: (f.doctor || '').trim(),
       location: (f.location || '').trim(),

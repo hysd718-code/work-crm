@@ -104,7 +104,7 @@ export const MED_FIELDS = [
   { k: 'allergies', zh: '过敏史', es: 'Alergias' },
   { k: 'meds', zh: '用药史', es: 'Medicación habitual' },
   { k: 'surgeries', zh: '手术史', es: 'Antecedentes quirúrgicos' },
-  { k: 'notes', zh: '备注/补充说明', es: 'Observaciones' },
+  { k: 'notes', zh: '备注：吸烟、饮酒、吸毒、其他信息', es: 'Observaciones: tabaco, alcohol, drogas, otros' },
 ];
 export const STATUSES = [
   { v: '新建', cls: 'bg-[#e8f0fe] text-[#1967d2]' },
