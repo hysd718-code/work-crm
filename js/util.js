@@ -106,6 +106,24 @@ export const MED_FIELDS = [
   { k: 'surgeries', zh: '手术史', es: 'Antecedentes quirúrgicos' },
   { k: 'notes', zh: '备注：吸烟、饮酒、吸毒、其他信息', es: 'Observaciones: tabaco, alcohol, drogas, otros' },
 ];
+// 生日：界面用 日/月/年 (dd/mm/yyyy)，存储用 ISO yyyy-mm-dd
+export function parseBirth(str) {
+  const m = String(str || '').trim().match(/^(\d{1,2})[\/.\-\s](\d{1,2})[\/.\-\s](\d{4})$/);
+  if (!m) return null;
+  const d = +m[1], mo = +m[2], y = +m[3];
+  const dt = new Date(y, mo - 1, d);
+  if (y < 1900 || dt.getFullYear() !== y || dt.getMonth() !== mo - 1 || dt.getDate() !== d || dt > new Date()) return null;
+  return `${y}-${pad(mo)}-${pad(d)}`;
+}
+export const fmtBirth = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
+// 年龄：满 2 岁显示「N岁」，不满 2 岁显示「N个月」
+export function ageOf(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-').map(Number), n = new Date();
+  let months = (n.getFullYear() - y) * 12 + (n.getMonth() + 1 - m) - (n.getDate() < d ? 1 : 0);
+  if (months < 0) return '';
+  return months >= 24 ? `${Math.floor(months / 12)} 岁` : `${months} 个月`;
+}
 export const STATUSES = [
   { v: '新客户', cls: 'bg-[#e8f0fe] text-[#1967d2]' },
   { v: '跟进中', cls: 'bg-[#fce8e6] text-[#c5221f]' },

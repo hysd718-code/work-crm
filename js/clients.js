@@ -1,7 +1,7 @@
 // 客户管理：列表 / 表单（姓名=拼音，医疗信息中西双语）/ 档案详情 / 文件上传（拍照或选文件 + 智能重命名 + Google Drive）
 import { state, live, getClient, save, remove, hospitalOf, getGeneralNote, clientStatus } from './store.js';
 import { EV_TYPES, evType, isPast, openEventDetail } from './calendar.js';
-import { $, $$, esc, openModal, confirmDialog, toast, normName, toPinyinName, fileSlug, todayStr, fmtSize, FILE_TYPES, REPORT_KINDS, MED_FIELDS, STATUSES, statusCls, buildFileName } from './util.js';
+import { $, $$, esc, openModal, confirmDialog, toast, normName, toPinyinName, fileSlug, todayStr, fmtSize, FILE_TYPES, REPORT_KINDS, MED_FIELDS, STATUSES, statusCls, buildFileName, parseBirth, fmtBirth, ageOf } from './util.js';
 import * as Drive from './drive.js';
 import { hasKey, translate } from './google.js';
 
@@ -15,7 +15,7 @@ export function renderClients(root) {
   const q = listFilter.q.trim().toLowerCase();
   const rows = all
     .filter((c) => !listFilter.status || clientStatus(c).v === listFilter.status)
-    .filter((c) => !q || [c.name, c.phone, c.cardNo, c.address].some((v) => (v || '').toLowerCase().includes(q)))
+    .filter((c) => !q || [c.name, c.phone, c.cardNo, c.idNo, c.address].some((v) => (v || '').toLowerCase().includes(q)))
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
   root.innerHTML = `
@@ -69,6 +69,12 @@ export function openClientForm(client, { prefillName = '', onSaved } = {}) {
       <div><label class="label">跟进状态（自动）</label><div class="input flex items-center" style="background:#f1f3f4"><span class="chip ${statusCls(client ? clientStatus(client).v : '新客户')}">${client ? clientStatus(client).v : '新客户'}</span></div></div>
       <div><label class="label">联系电话 / Teléfono</label><input name="phone" type="tel" class="input" value="${esc(c.phone || '')}"></div>
     </div>
+    <div class="grid grid-cols-2 gap-3">
+      <div><label class="label">生日 / Nacimiento（日/月/年）</label><input name="birth" class="input" inputmode="numeric" placeholder="25/03/1980" value="${esc(fmtBirth(c.birth))}"></div>
+      <div><label class="label">年龄（自动）</label><div id="age-out" class="input flex items-center" style="background:#f1f3f4">${esc(ageOf(c.birth)) || '—'}</div></div>
+    </div>
+    <label class="label">证件号（居留 / 护照）/ Nº documento</label>
+    <input name="idNo" class="input uppercase" autocapitalize="characters" value="${esc(c.idNo || '')}">
     <label class="label">医疗卡号 / Nº tarjeta sanitaria</label>
     <input name="cardNo" class="input" value="${esc(c.cardNo || '')}">
     <label class="label">地址 / Dirección</label>
@@ -85,6 +91,7 @@ export function openClientForm(client, { prefillName = '', onSaved } = {}) {
   const nameI = form.elements.name, hint = $('#name-hint', m.el);
   const refreshHint = () => { hint.innerHTML = `文件名与云端文件夹将写作：<b>${esc(fileSlug(nameI.value) || 'ZHANG_SAN')}</b>。输入中文会自动转拼音（首字作姓，复姓请手动改）。`; };
   nameI.oninput = refreshHint;
+  form.elements.birth.oninput = () => { $('#age-out', m.el).textContent = ageOf(parseBirth(form.elements.birth.value)) || '—'; };
 
   /* ---- 中西自动互译：只翻译这几个医疗字段；对方已有手填内容时不覆盖；译文打「自动翻译」标记 ---- */
   const auto = {};
@@ -133,11 +140,13 @@ export function openClientForm(client, { prefillName = '', onSaved } = {}) {
     const f = Object.fromEntries(new FormData(form).entries());
     const name = (await toPinyinName(f.name)) || normName(f.name);
     if (!name) return toast('请输入拼音姓名', 'error');
+    const birth = f.birth.trim() ? parseBirth(f.birth) : '';
+    if (birth === null) return toast('生日格式应为 日/月/年，例如 25/03/1980，且不能是未来日期', 'error');
     if (live('clients').some((x) => x.id !== c.id && x.name === name)) {
       if (!(await confirmDialog(`已存在同名客户「${name}」。\n同名客户会共用同一个云端文件夹，仍要保存吗？`))) return;
     }
     const flags = Object.fromEntries(Object.entries(auto).map(([n, v]) => [n + '_auto', v]));
-    const rec = save('clients', { ...c, ...f, ...flags, name, pinyin: fileSlug(name), files: c.files || [] });
+    const rec = save('clients', { ...c, ...f, ...flags, birth, idNo: f.idNo.trim().toUpperCase(), name, pinyin: fileSlug(name), files: c.files || [] });
     m.close();
     toast('客户已保存', 'ok');
     onSaved && onSaved(rec);
@@ -220,6 +229,8 @@ export function renderClientDetail(root, id) {
         </div>
       </div>
       <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2 mt-4 text-sm">
+        <div><dt class="text-xs text-[#5f6368]">生日 / 年龄</dt><dd>${c.birth ? esc(fmtBirth(c.birth)) + '（' + esc(ageOf(c.birth)) + '）' : '—'}</dd></div>
+        <div><dt class="text-xs text-[#5f6368]">证件号（居留/护照）</dt><dd>${esc(c.idNo) || '—'}</dd></div>
         <div><dt class="text-xs text-[#5f6368]">医疗卡号 / Tarjeta sanitaria</dt><dd>${esc(c.cardNo) || '—'}</dd></div>
         <div><dt class="text-xs text-[#5f6368]">地址 / Dirección</dt><dd>${esc(c.address) || '—'}</dd></div>
       </dl>
