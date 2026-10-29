@@ -267,6 +267,7 @@ export function renderClientDetail(root, id) {
           </div>
           <button class="btn btn-sm" data-f="view" data-id="${f.id}">预览</button>
           <button class="btn btn-sm" data-f="dl" data-id="${f.id}">下载</button>
+          <button class="btn btn-sm" data-f="retype" data-id="${f.id}">改类型</button>
           <button class="btn btn-sm btn-danger" data-f="rm" data-id="${f.id}">删</button>
         </div>`).join('') || '<div class="text-sm text-[#5f6368] py-4 text-center">尚未上传文件</div>'}
       </div>
@@ -377,6 +378,63 @@ function bindUpload(root, c) {
 }
 
 /* ================= 文件：预览 / 下载 / 删除 ================= */
+/* ---- 改文件类型：先在 Drive 改名，成功后才更新本地记录（两边名字始终一致） ---- */
+function retypeDialog(c, f) {
+  const m = openModal(`
+  <div class="p-5">
+    <h2 class="text-lg font-medium">修改文件类型</h2>
+    <div class="text-xs text-[#5f6368] mt-1 break-all">当前：${esc(f.name)}</div>
+    <label class="label">新文件类型</label>
+    <select id="rt-type" class="input">${FILE_TYPES.map((t) => `<option value="${t.v}" ${t.v === f.type ? 'selected' : ''}>${t.l}</option>`).join('')}</select>
+    <label class="label">检查类型（仅「检查报告」可选）</label>
+    <select id="rt-kind" class="input"><option value="">— 选择检查类型 —</option>${REPORT_KINDS.map((k) => `<option value="${k.v}">${k.l}</option>`).join('')}</select>
+    <div id="rt-custom-wrap" class="hidden"><label class="label">检查名称（英文/拼音，如 Colonoscopia）</label><input id="rt-custom" class="input"></div>
+    <div class="mt-3 p-3 rounded-lg bg-[#f1f3f4] text-xs text-[#5f6368]">新文件名<div id="rt-new" class="text-[13px] font-medium text-[#202124] break-all"></div><div class="mt-1">Google Drive 里的文件会同步改成这个名字</div></div>
+    <div class="flex justify-end gap-2 mt-5"><button class="btn" data-close>取消</button><button id="rt-ok" class="btn btn-primary">改名并保存</button></div>
+  </div>`);
+  const typeI = $('#rt-type', m.el), kindI = $('#rt-kind', m.el), customI = $('#rt-custom', m.el), out = $('#rt-new', m.el);
+  const known = REPORT_KINDS.find((k) => f.sub && k.v === f.sub);
+  if (f.type === 'Resultados_Informe' && f.sub) { if (known) kindI.value = known.v; else { kindI.value = 'Otros'; customI.value = f.sub; } }
+  const ext = (f.name.match(/\.([^.]+)$/) || [, 'bin'])[1];
+  const prefix = (f.name.match(/^(.*_\d{8})_/) || [])[1] || `${c.pinyin || fileSlug(c.name)}_${(f.date || todayStr()).replaceAll('-', '')}`;
+  const sub = () => {
+    if (typeI.value !== 'Resultados_Informe') return '';
+    if (kindI.value !== 'Otros') return kindI.value;
+    return customI.value.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 24);
+  };
+  const compute = () => {
+    let name = `${prefix}_${typeI.value}${sub() ? '_' + sub() : ''}.${ext}`;
+    const taken = new Set((c.files || []).filter((x) => x.id !== f.id).map((x) => x.name));
+    if (name !== f.name && taken.has(name)) { const base = name.replace(/\.[^.]+$/, ''); let n = 2; while (taken.has(`${base}_${n}.${ext}`)) n++; name = `${base}_${n}.${ext}`; }
+    return name;
+  };
+  const refresh = () => {
+    const rep = typeI.value === 'Resultados_Informe';
+    kindI.disabled = !rep; if (!rep) kindI.value = '';
+    $('#rt-custom-wrap', m.el).classList.toggle('hidden', !(rep && kindI.value === 'Otros'));
+    out.textContent = rep && !sub() ? '（请选择检查类型）' : compute();
+  };
+  [typeI, kindI, customI].forEach((x) => x.addEventListener('input', refresh));
+  refresh();
+  $('#rt-ok', m.el).onclick = async () => {
+    const rep = typeI.value === 'Resultados_Informe';
+    if (rep && !sub()) return toast('请选择检查类型（验血、彩超、CT…）', 'error');
+    const name = compute();
+    if (name === f.name) return toast('类型没有变化');
+    const btn = $('#rt-ok', m.el); btn.disabled = true; btn.textContent = '改名中…';
+    try {
+      await Drive.renameFile(f.id, name); // 先改 Drive；失败则抛错，本地记录保持不变
+      const latest = getClient(c.id);
+      latest.files = latest.files.map((x) => (x.id === f.id ? { ...x, name, type: typeI.value, sub: sub() } : x));
+      save('clients', latest);
+      m.close(); toast('已改类型，Drive 文件名已同步', 'ok');
+    } catch (e) {
+      btn.disabled = false; btn.textContent = '改名并保存';
+      toast('Drive 改名失败，未做任何修改：' + e.message, 'error', 6000);
+    }
+  };
+}
+
 async function fileAction(c, action, fid) {
   const f = (c.files || []).find((x) => x.id === fid);
   if (!f) return;
@@ -395,6 +453,8 @@ async function fileAction(c, action, fid) {
       a.download = f.name;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    } else if (action === 'retype') {
+      retypeDialog(c, f);
     } else if (action === 'rm') {
       if (!(await confirmDialog(`删除文件「${f.name}」？\n云端 Drive 中的文件会移入回收站。`, { ok: '删除', danger: true }))) return;
       try { await Drive.trashFile(fid); } catch (e) { if (e.status !== 404) throw e; }

@@ -108,6 +108,16 @@ export async function fetchBlob(fileId) {
   return r.blob();
 }
 
+// 只改名（metadata-only PATCH，不重传文件）
+export async function renameFile(fileId, name) {
+  const r = await api(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,name`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  return r.json();
+}
+
 export async function trashFile(fileId) {
   await api(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`, {
     method: 'PATCH',
