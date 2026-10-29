@@ -1,8 +1,8 @@
 // Service Worker：本地资源预缓存 + CDN 资源运行时缓存；GitHub / Google API 一律走网络
-const VERSION = 'crm-v13';
+const VERSION = 'crm-v14';
 const CORE = [
   './', 'index.html', 'manifest.json',
-  'js/app.js', 'js/util.js', 'js/store.js', 'js/sync.js', 'js/drive.js', 'js/calendar.js', 'js/clients.js', 'js/settings.js', 'js/google.js', 'js/library.js',
+  'js/app.js', 'js/util.js', 'js/store.js', 'js/sync.js', 'js/drive.js', 'js/calendar.js', 'js/clients.js', 'js/settings.js', 'js/google.js', 'js/library.js', 'js/share.js',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
 const NETWORK_ONLY = ['api.github.com', 'googleapis.com', 'accounts.google.com', 'www.google.com', 'gstatic.com'];

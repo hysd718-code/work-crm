@@ -2,6 +2,7 @@
 import { state, live, getClient, save, remove, listHospitals, listDoctors, hospitalOf, doctorLabel, composeNotes, listExams, examByName } from './store.js';
 import { attachAddress } from './google.js';
 import { editHospital } from './library.js';
+import { openShareMenu } from './share.js';
 import { $, $$, esc, normName, pad, ymd, parseYmd, todayStr, addDays, toMin, fromMin, WEEK, openModal, confirmDialog, toast } from './util.js';
 import { openClientForm } from './clients.js';
 
@@ -182,6 +183,7 @@ export function openEventDetail(id) {
     </dl>
     <div class="flex flex-wrap gap-2 mt-5 justify-end">
       ${c ? `<button class="btn btn-primary" data-profile>查看客户档案与文件</button>` : ''}
+      <button class="btn" data-share style="border:2px solid #1a73e8;background:#e8f0fe;color:#1967d2">📤 分享</button>
       <button class="btn" data-edit>编辑</button>
       <button class="btn btn-danger" data-del>删除</button>
       <button class="btn" data-close>关闭</button>
@@ -189,6 +191,7 @@ export function openEventDetail(id) {
   </div>`);
   const p = $('[data-profile]', m.el);
   if (p) p.onclick = () => { m.close(); location.hash = '#/client/' + c.id; };
+  $('[data-share]', m.el).onclick = () => openShareMenu(e);
   $('[data-edit]', m.el).onclick = () => { m.close(); openEventForm(e); };
   $('[data-del]', m.el).onclick = async () => {
     if (!(await confirmDialog('确定删除该行程？', { ok: '删除', danger: true }))) return;
