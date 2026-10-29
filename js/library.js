@@ -1,5 +1,5 @@
 // 医院与医生：两个资料库。医院录一次，医生通过下拉选择所属医院（地址/电话/营业时间都取自医院）。
-import { live, save, remove, listHospitals, listDoctors, doctorsOf, hospitalOf, doctorTitle } from './store.js';
+import { live, save, remove, listHospitals, listDoctors, listExams, doctorsOf, hospitalOf, doctorTitle } from './store.js';
 import { $, esc, openModal, confirmDialog, toast } from './util.js';
 import { attachAddress, hasKey } from './google.js';
 
@@ -8,20 +8,22 @@ let tab = 'h', q = '';
 const hit = (s) => !q || String(s || '').toLowerCase().includes(q.toLowerCase());
 
 export function renderLibrary(root) {
-  const hs = listHospitals(), ds = listDoctors();
+  const hs = listHospitals(), ds = listDoctors(), xs = listExams();
   const hList = hs.filter((h) => hit([h.name, h.address, h.phone, h.other].join(' ')) || doctorsOf(h.id).some((d) => hit(d.name + d.specialty)));
   const dList = ds.filter((d) => hit([d.name, d.specialty, hospitalOf(d.hospitalId)?.name, d.note].join(' ')));
+  const xList = xs.filter((x) => hit([x.name, x.nameEs, x.prep, x.other].join(' ')));
   const tabBtn = (k, label, n) => `<button data-tab="${k}" class="flex-1 h-12 text-sm font-medium border-b-[3px] ${tab === k ? 'text-[#1967d2] border-[#1a73e8]' : 'text-[#5f6368] border-transparent'}">${label} · ${n}</button>`;
 
   root.innerHTML = `
   <div class="max-w-2xl mx-auto pb-24">
-    <div class="flex border-b border-[#e8eaed] bg-white sticky top-0 z-10">${tabBtn('h', '医院', hs.length)}${tabBtn('d', '医生', ds.length)}</div>
+    <div class="flex border-b border-[#e8eaed] bg-white sticky top-0 z-10">${tabBtn('h', '医院', hs.length)}${tabBtn('d', '医生', ds.length)}${tabBtn('e', '检查项目', xs.length)}</div>
     <div class="p-3 md:p-4 space-y-3">
       <div class="flex gap-2">
         <input id="lib-q" class="input !mt-0" placeholder="搜索名称、专科、地址…" value="${esc(q)}">
-        <button id="lib-new" class="btn btn-primary shrink-0">＋ 新增${tab === 'h' ? '医院' : '医生'}</button>
+        <button id="lib-new" class="btn btn-primary shrink-0">＋ 新增${{ h: '医院', d: '医生', e: '检查项目' }[tab]}</button>
       </div>
-      ${tab === 'h' ? (hList.length ? hList.map(hospitalCard).join('') : empty('还没有医院。先点右上「新增医院」。'))
+      ${tab === 'e' ? (xList.length ? xList.map(examCard).join('') : empty('还没有检查项目。点右上「新增检查项目」，或在新建「检查」行程时手写一个，会自动加入这里。'))
+        : tab === 'h' ? (hList.length ? hList.map(hospitalCard).join('') : empty('还没有医院。先点右上「新增医院」。'))
         : (dList.length ? dList.map(doctorCard).join('') : empty(hs.length ? '还没有医生。点右上「新增医生」。' : '请先在「医院」里添加医院，再添加医生。'))}
       ${hasKey() ? '' : '<p class="text-xs text-[#5f6368]">提示：在「设置」填写 Google API 密钥后，地址栏会出现谷歌地图联想。</p>'}
     </div>
@@ -30,7 +32,8 @@ export function renderLibrary(root) {
   root.querySelectorAll('[data-tab]').forEach((b) => { b.onclick = () => { tab = b.dataset.tab; renderLibrary(root); }; });
   const qi = $('#lib-q', root);
   qi.oninput = (e) => { q = e.target.value; const pos = qi.selectionStart; renderLibrary(root); const n = $('#lib-q', root); n.focus(); n.setSelectionRange(pos, pos); };
-  $('#lib-new', root).onclick = () => (tab === 'h' ? openHospitalForm(null) : openDoctorForm(null));
+  $('#lib-new', root).onclick = () => (tab === 'h' ? openHospitalForm(null) : tab === 'd' ? openDoctorForm(null) : openExamForm(null));
+  root.querySelectorAll('[data-ex]').forEach((b) => { b.onclick = () => openExamForm(live('exams').find((x) => x.id === b.dataset.ex)); });
   root.querySelectorAll('[data-eh]').forEach((b) => { b.onclick = () => openHospitalForm(hospitalOf(b.dataset.eh)); });
   root.querySelectorAll('[data-ed]').forEach((b) => { b.onclick = () => openDoctorForm(live('doctors').find((d) => d.id === b.dataset.ed)); });
   root.querySelectorAll('[data-add-doc]').forEach((b) => { b.onclick = () => openDoctorForm(null, b.dataset.addDoc); });
@@ -61,6 +64,50 @@ function hospitalCard(h) {
       <button class="chip" data-add-doc="${esc(h.id)}" style="cursor:pointer;color:#1967d2">＋ 添加医生</button>
     </div>
   </section>`;
+}
+
+function examCard(x) {
+  return `<section class="card p-4">
+    <div class="flex items-start gap-2">
+      <div class="flex-1 min-w-0"><div class="font-medium break-words">${esc(x.name)}</div>${x.nameEs ? `<div class="text-sm text-[#5f6368]">${esc(x.nameEs)}</div>` : ''}</div>
+      <button class="btn btn-sm" data-ex="${esc(x.id)}">编辑</button>
+    </div>
+    ${x.prep ? `<div class="mt-2 text-sm rounded-lg px-3 py-2 whitespace-pre-line" style="background:#fef7e0;color:#6b3d00">检查前准备：${esc(x.prep)}</div>` : '<div class="mt-2 text-xs text-[#70757a]">还没有填检查前准备</div>'}
+    ${x.other ? `<div class="text-sm text-[#5f6368] mt-1 whitespace-pre-line">${esc(x.other)}</div>` : ''}
+  </section>`;
+}
+
+function openExamForm(x0) {
+  const x = x0 || {};
+  const m = openModal(`
+  <form class="p-5" autocomplete="off">
+    <h2 class="text-lg font-medium mb-1">${x0 ? '编辑检查项目' : '新增检查项目'}</h2>
+    <label class="label">项目名称（中文）*</label>
+    <input name="name" class="input" required value="${esc(x.name || '')}" placeholder="腹部彩超">
+    <label class="label">项目名称（西语）</label>
+    <input name="nameEs" class="input" value="${esc(x.nameEs || '')}" placeholder="Ecografía abdominal">
+    <label class="label">检查前准备（新建「检查」行程选这个项目时自动写入备注）</label>
+    <textarea name="prep" class="input" rows="4">${esc(x.prep || '')}</textarea>
+    <label class="label">其他信息</label>
+    <textarea name="other" class="input" rows="2">${esc(x.other || '')}</textarea>
+    <div class="flex justify-between gap-2 mt-5">
+      <div>${x0 ? '<button type="button" class="btn btn-danger" data-del>删除</button>' : ''}</div>
+      <div class="flex gap-2"><button type="button" class="btn" data-close>取消</button><button type="submit" class="btn btn-primary">保存</button></div>
+    </div>
+  </form>`);
+  const form = $('form', m.el);
+  const del = $('[data-del]', m.el);
+  if (del) del.onclick = async () => {
+    if (!(await confirmDialog('删除这个检查项目？已建的行程不受影响。', { ok: '删除', danger: true }))) return;
+    remove('exams', x.id); m.close(); toast('已删除');
+  };
+  form.onsubmit = (e) => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(form).entries());
+    if (live('exams').some((y) => y.id !== x.id && y.name.trim().toLowerCase() === f.name.trim().toLowerCase())) return toast('已有同名检查项目', 'error');
+    save('exams', { ...x, id: x.id, name: f.name.trim(), nameEs: f.nameEs.trim(), prep: f.prep.trim(), other: f.other.trim() });
+    m.close(); toast('已保存', 'ok');
+  };
 }
 
 function doctorCard(d) {

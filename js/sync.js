@@ -93,6 +93,7 @@ export async function syncAll() {
     await syncOne('presets', 'presets.json');
     await syncOne('hospitals', 'hospitals.json');
     await syncOne('doctors', 'doctors.json');
+    await syncOne('exams', 'exams.json');
     saveMeta({ lastSync: new Date().toISOString() });
     window.dispatchEvent(new CustomEvent('crm:sync-end', { detail: { ok: true } }));
     window.dispatchEvent(new Event('crm:render'));

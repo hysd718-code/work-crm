@@ -1,5 +1,5 @@
 // 日历：月 / 周 / 日 / 列表视图（Google Calendar 风格），行程新增、详情、客户联动
-import { state, live, getClient, save, remove, listHospitals, listDoctors, hospitalOf, doctorLabel, composeNotes } from './store.js';
+import { state, live, getClient, save, remove, listHospitals, listDoctors, hospitalOf, doctorLabel, composeNotes, listExams, examByName } from './store.js';
 import { attachAddress } from './google.js';
 import { editHospital } from './library.js';
 import { $, $$, esc, normName, pad, ymd, parseYmd, todayStr, addDays, toMin, fromMin, WEEK, openModal, confirmDialog, toast } from './util.js';
@@ -217,7 +217,8 @@ export function openEventForm(ev, defaults = {}) {
       <div data-t><label class="label">结束</label><input name="end" type="time" class="input" value="${esc(e.end || '10:00')}"></div>
     </div>
     <div data-exam style="display:none"><label class="label" style="color:#1a73e8">检查项目 *（检查类行程必填；必须在下方选择医院）</label>
-    <input name="exam" class="input" value="${esc(e.exam || '')}" placeholder="如：腹部彩超、验血、胸片"></div>
+    <input name="exam" list="exam-list" class="input" value="${esc(e.exam || '')}" placeholder="从检查项目库选择，或直接手写新项目">
+    <datalist id="exam-list">${listExams().map((x) => `<option value="${esc(x.name)}">${esc(x.nameEs || '')}</option>`).join('')}</datalist></div>
     <label class="label" style="color:#1967d2">医生 / 医院（来自「医院与医生」，选一项自动填写）</label>
     <select name="preset" class="input"><option value="">— 手动填写 —</option>
       <optgroup label="医生">${listDoctors().map((d) => `<option value="d:${esc(d.id)}" ${'d:' + d.id === e.presetId ? 'selected' : ''}>${esc(doctorLabel(d))}</option>`).join('')}</optgroup>
@@ -248,15 +249,17 @@ export function openEventForm(ev, defaults = {}) {
 
   // 选科室：自动填医生/地址/备注。只覆盖「还是自动填的」内容；用户手改过的不动
   // 选医生 → 医生姓名 + 所属医院地址 + 医生注意事项；只选医院 → 仅地址
-  const autoOf = (val) => {
+  const isExam = () => form.querySelector('input[name=type]:checked').value === 'exam';
+  const autoOf = (val, examName) => {
+    const prep = (examByName(examName) || {}).prep || ''; // 检查前准备（仅检查类行程）
     const [kind, id] = (val || '').split(/:(.*)/s);
-    if (kind === 'd') { const d = live('doctors').find((x) => x.id === id); return d ? { doctor: d.name || '', location: hospitalOf(d.hospitalId)?.address || '', notes: composeNotes(d) } : autoOf(''); }
-    if (kind === 'h') { const h = hospitalOf(id); return h ? { doctor: '', location: h.address || '', notes: composeNotes(null) } : autoOf(''); }
-    return { doctor: '', location: '', notes: composeNotes(null) };
+    if (kind === 'd') { const d = live('doctors').find((x) => x.id === id); return d ? { doctor: d.name || '', location: hospitalOf(d.hospitalId)?.address || '', notes: composeNotes(d, prep) } : autoOf('', examName); }
+    if (kind === 'h') { const h = hospitalOf(id); return h ? { doctor: '', location: h.address || '', notes: composeNotes(null, prep) } : autoOf('', examName); }
+    return { doctor: '', location: '', notes: composeNotes(null, prep) };
   };
-  let auto = autoOf(ev ? e.presetId : '');
-  form.elements.preset.onchange = () => {
-    const next = autoOf(form.elements.preset.value);
+  let auto = autoOf(ev ? e.presetId : '', ev && e.type === 'exam' ? e.exam : '');
+  const refresh = () => {
+    const next = autoOf(form.elements.preset.value, isExam() ? form.elements.exam.value : '');
     let kept = false;
     for (const k of ['doctor', 'location', 'notes']) {
       const el = form.elements[k];
@@ -266,6 +269,9 @@ export function openEventForm(ev, defaults = {}) {
     auto = next;
     if (kept) toast('有已手改的内容未被覆盖', 'info');
   };
+  form.elements.preset.onchange = refresh;
+  form.elements.exam.onchange = refresh;
+  form.querySelectorAll('input[name=type]').forEach((r) => r.addEventListener('change', refresh));
   form.elements.start.onchange = () => { // 开始时间变化时，结束时间自动顺延 1 小时
     const s = toMin(form.elements.start.value); if (toMin(form.elements.end.value) <= s) form.elements.end.value = fromMin(Math.min(s + 60, 1439));
   };
@@ -280,6 +286,10 @@ export function openEventForm(ev, defaults = {}) {
       const okHosp = kind === 'h' || (kind === 'd' && live('doctors').find((x) => x.id === id)?.hospitalId);
       if (!okHosp) return toast('「检查」必须在「医生 / 医院」里选择医院', 'error');
       if (!(f.exam || '').trim()) return toast('请填写检查项目', 'error');
+    }
+    if (f.type === 'exam' && !examByName(f.exam)) { // 手写的新检查项目 → 自动加入检查项目库
+      save('exams', { name: f.exam.trim(), nameEs: '', prep: '', other: '' });
+      toast('已把「' + f.exam.trim() + '」加入检查项目库，可去补充检查前准备', 'info', 4500);
     }
     const name = (f.client || '').trim();
     let clientId = '';

@@ -7,6 +7,7 @@ const K = {
   presets: 'crm.presets.v1',
   hospitals: 'crm.hospitals.v1',
   doctors: 'crm.doctors.v1',
+  exams: 'crm.exams.v1',
   settings: 'crm.settings.v1',
   meta: 'crm.meta.v1',
 };
@@ -17,6 +18,7 @@ export const state = {
   events: load(K.events, []),
   presets: load(K.presets, []), // 仅保存 id='general'（所有预约通用提醒）；旧版「科室」记录会被迁移成医院+医生
   hospitals: load(K.hospitals, []), // {id,name,address,phone,hours,other}
+  exams: load(K.exams, []), // {id,name,nameEs,prep,other} 检查项目库
   doctors: load(K.doctors, []), // {id,name,specialty,hospitalId,times,note,other}
   settings: {
     token: '', repo: '', branch: 'main', dir: 'data',
@@ -58,7 +60,11 @@ export function migrateLegacyPresets() {
     remove('presets', p.id);
   }
 }
-export const composeNotes = (p) => [getGeneralNote(), p && p.note].map((x) => (x || '').trim()).filter(Boolean).join('\n');
+export const listExams = () => live('exams').sort((a, b) => a.name.localeCompare(b.name));
+const nk = (s) => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+export const examByName = (n) => n && live('exams').find((x) => nk(x.name) === nk(n) || (x.nameEs && nk(x.nameEs) === nk(n)));
+// 备注 = 通用提醒 + 医生注意事项 + 检查前准备
+export const composeNotes = (p, examPrep = '') => [getGeneralNote(), p && p.note, examPrep && '检查前准备：' + examPrep].map((x) => (x || '').trim()).filter(Boolean).join('\n');
 
 // source: 'local'（用户操作，触发自动同步） | 'sync'
 export function save(col, rec, source = 'local') {
@@ -97,7 +103,7 @@ export function saveMeta(patch) {
 }
 
 export function exportAll() {
-  return JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), clients: state.clients, events: state.events, presets: state.presets, hospitals: state.hospitals, doctors: state.doctors }, null, 2);
+  return JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), clients: state.clients, events: state.events, presets: state.presets, hospitals: state.hospitals, doctors: state.doctors, exams: state.exams }, null, 2);
 }
 export function importAll(text) {
   const d = JSON.parse(text);
@@ -112,6 +118,7 @@ export function importAll(text) {
   if (Array.isArray(d.presets)) replaceAll('presets', merge(state.presets, d.presets));
   if (Array.isArray(d.hospitals)) replaceAll('hospitals', merge(state.hospitals, d.hospitals));
   if (Array.isArray(d.doctors)) replaceAll('doctors', merge(state.doctors, d.doctors));
+  if (Array.isArray(d.exams)) replaceAll('exams', merge(state.exams, d.exams));
   notify();
 }
 export function clearLocal() {
