@@ -1,5 +1,6 @@
 // 客户管理：列表 / 表单（姓名=拼音，医疗信息中西双语）/ 档案详情 / 文件上传（拍照或选文件 + 智能重命名 + Google Drive）
-import { state, live, getClient, save, remove } from './store.js';
+import { state, live, getClient, save, remove, hospitalOf, getGeneralNote } from './store.js';
+import { EV_TYPES, evType, isPast, openEventDetail } from './calendar.js';
 import { $, $$, esc, openModal, confirmDialog, toast, normName, toPinyinName, fileSlug, todayStr, fmtSize, FILE_TYPES, REPORT_KINDS, MED_FIELDS, STATUSES, statusCls, buildFileName } from './util.js';
 import * as Drive from './drive.js';
 import { hasKey, translate } from './google.js';
@@ -155,6 +156,45 @@ const bi = (c, k) => {
   return [zh && `<div><span class="text-[10px] px-1 rounded bg-[#f1f3f4] text-[#5f6368] mr-1">中</span>${esc(zh)}${at('zh')}</div>`, es && `<div><span class="text-[10px] px-1 rounded bg-[#f1f3f4] text-[#5f6368] mr-1">ES</span>${esc(es)}${at('es')}</div>`].filter(Boolean).join('');
 };
 
+/* ================= 看诊总结：按年折叠，月份 · 专科 · 医生/医院 · 备注 ================= */
+const openYears = new Set(); // 记住展开的年份；null 表示尚未初始化（默认展开最近一年）
+let yearsInit = false;
+
+function visitOf(e) {
+  const [kind, rid] = (e.presetId || '').split(/:(.*)/s);
+  const d = kind === 'd' ? live('doctors').find((x) => x.id === rid) : null;
+  const h = d ? hospitalOf(d.hospitalId) : kind === 'h' ? hospitalOf(rid) : null;
+  const t = evType(e);
+  const spec = t === 'exam' && e.exam ? '检查：' + e.exam : (d && d.specialty) || '—';
+  const who = [d && d.name, h && h.name].filter(Boolean).join(' / ') || (e.location || '').split(',')[0].trim() || '—';
+  // 备注只显示用户自己加的内容：去掉自动写入的通用提醒、医生注意事项、检查前准备
+  const auto = new Set([...getGeneralNote().split('\n'), ...((d && d.note) || '').split('\n')].map((x) => x.trim()).filter(Boolean));
+  const note = (e.notes || '').split('\n').map((x) => x.trim())
+    .filter((x) => x && !auto.has(x) && !x.startsWith('检查前准备：') && x !== '请携带：居留证件、医疗卡、检查单或病历。').join('；');
+  return { month: +e.date.slice(5, 7), year: e.date.slice(0, 4), spec, who, note, color: EV_TYPES[t].color, id: e.id };
+}
+
+function summaryHtml(evs) {
+  const past = evs.filter((e) => isPast(e));
+  if (!past.length) return '<div class="card p-4 text-sm text-[#5f6368]">还没有已结束的行程，看诊记录会在行程结束后自动出现在这里。</div>';
+  const byYear = new Map();
+  past.map(visitOf).forEach((v) => { if (!byYear.has(v.year)) byYear.set(v.year, []); byYear.get(v.year).push(v); });
+  const years = [...byYear.keys()].sort((a, b) => b.localeCompare(a)); // evs 已按日期倒序
+  if (!yearsInit) { openYears.add(years[0]); yearsInit = true; }
+  return `<div class="card px-4">
+    <div class="flex items-center py-3 text-xs text-[#5f6368]"><span class="flex-1">共 ${past.length} 次 · 仅已结束的行程</span></div>
+    ${years.map((y) => `<details data-y="${y}" class="border-t border-[#e8eaed]" ${openYears.has(y) ? 'open' : ''}>
+      <summary class="flex items-center gap-2 h-12 cursor-pointer font-medium select-none">${y} 年 <span class="text-xs font-normal text-[#5f6368]">${byYear.get(y).length} 次</span></summary>
+      <div class="pb-2">${byYear.get(y).map((v) => `<button data-sev="${esc(v.id)}" class="w-full flex gap-2.5 py-2.5 border-t border-[#f1f3f4] text-left">
+        <span class="w-11 shrink-0 text-sm font-medium">${v.month}月</span>
+        <span class="w-1 rounded shrink-0" style="background:${v.color}"></span>
+        <span class="min-w-0 flex-1"><span class="block text-sm font-medium">${esc(v.spec)}</span><span class="block text-[13px] text-[#3c4043]">${esc(v.who)}</span>${v.note ? `<span class="block text-xs text-[#5f6368] mt-0.5">${esc(v.note)}</span>` : ''}</span>
+      </button>`).join('')}</div>
+    </details>`).join('')}
+    <div class="flex gap-3 py-3 border-t border-[#e8eaed] text-[11px] text-[#5f6368]">${Object.values(EV_TYPES).map((t) => `<span><b style="color:${t.color}">▌</b>${t.label}</span>`).join('')}</div>
+  </div>`;
+}
+
 export function renderClientDetail(root, id) {
   const c = getClient(id);
   if (!c) {
@@ -221,6 +261,8 @@ export function renderClientDetail(root, id) {
       </div>
     </div>
 
+    <h3 class="text-sm font-medium text-[#1a73e8] mt-5 mb-2">看诊总结</h3>
+    ${summaryHtml(evs)}
     <h3 class="text-sm font-medium text-[#1a73e8] mt-5 mb-2">相关行程（${evs.length}）</h3>
     <div class="card divide-y divide-[#e8eaed] mb-10">
       ${evs.map((e) => `<a href="#/calendar?d=${e.date}" class="flex gap-3 p-3 text-sm hover:bg-[#f8f9fa]"><span class="text-[#5f6368] w-24 shrink-0">${esc(e.date)}</span><span class="w-24 shrink-0">${e.allDay ? '全天' : esc(e.start) + '–' + esc(e.end)}</span><span class="truncate">${esc(e.location || e.notes || '')}</span></a>`).join('') || '<div class="p-4 text-sm text-[#5f6368] text-center">暂无行程</div>'}
@@ -234,6 +276,8 @@ export function renderClientDetail(root, id) {
     toast('已删除');
     location.hash = '#/clients';
   };
+  $$('details[data-y]', root).forEach((d) => d.addEventListener('toggle', () => { d.open ? openYears.add(d.dataset.y) : openYears.delete(d.dataset.y); }));
+  $$('[data-sev]', root).forEach((b) => { b.onclick = () => openEventDetail(b.dataset.sev); });
   bindUpload(root, c);
   $$('[data-f]', root).forEach((b) => (b.onclick = () => fileAction(c, b.dataset.f, b.dataset.id)));
 }
