@@ -1,5 +1,5 @@
 // 客户管理：列表 / 表单（姓名=拼音，医疗信息中西双语）/ 档案详情 / 文件上传（拍照或选文件 + 智能重命名 + Google Drive）
-import { state, live, getClient, save, remove, hospitalOf, getGeneralNote } from './store.js';
+import { state, live, getClient, save, remove, hospitalOf, getGeneralNote, clientStatus } from './store.js';
 import { EV_TYPES, evType, isPast, openEventDetail } from './calendar.js';
 import { $, $$, esc, openModal, confirmDialog, toast, normName, toPinyinName, fileSlug, todayStr, fmtSize, FILE_TYPES, REPORT_KINDS, MED_FIELDS, STATUSES, statusCls, buildFileName } from './util.js';
 import * as Drive from './drive.js';
@@ -14,7 +14,7 @@ export function renderClients(root) {
   const all = live('clients');
   const q = listFilter.q.trim().toLowerCase();
   const rows = all
-    .filter((c) => !listFilter.status || c.status === listFilter.status)
+    .filter((c) => !listFilter.status || clientStatus(c).v === listFilter.status)
     .filter((c) => !q || [c.name, c.phone, c.cardNo, c.address].some((v) => (v || '').toLowerCase().includes(q)))
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 
@@ -34,7 +34,7 @@ export function renderClients(root) {
         <a href="#/client/${c.id}" class="card p-3 flex items-center gap-3 hover:shadow-md transition">
           <div class="w-10 h-10 rounded-full bg-[#1a73e8] text-white flex items-center justify-center text-base font-medium shrink-0">${esc((c.name || '?').slice(0, 1))}</div>
           <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2"><span class="font-medium truncate">${esc(c.name)}</span><span class="chip ${statusCls(c.status)}">${esc(c.status)}</span></div>
+            <div class="flex items-center gap-2"><span class="font-medium truncate">${esc(c.name)}</span><span class="chip ${statusCls(clientStatus(c).v)}">${esc(clientStatus(c).v)}</span></div>
             <div class="text-xs text-[#5f6368] truncate">${esc(c.phone || '')}</div>
           </div>
           <div class="text-xs text-[#5f6368] shrink-0">${(c.files || []).length} 个文件</div>
@@ -48,7 +48,7 @@ export function renderClients(root) {
 
 /* ================= 新建 / 编辑表单 ================= */
 export function openClientForm(client, { prefillName = '', onSaved } = {}) {
-  const c = client || { name: prefillName, status: '新建', files: [] };
+  const c = client || { name: prefillName, files: [] };
   const medHtml = MED_FIELDS.map((m) => `
     <div class="mt-3">
       <div class="text-sm font-medium">${m.zh} <span class="text-[#5f6368] font-normal">/ ${m.es}</span></div>
@@ -66,7 +66,7 @@ export function openClientForm(client, { prefillName = '', onSaved } = {}) {
     <input name="name" class="input uppercase" required placeholder="ZHANG SAN" value="${esc(c.name)}" autocapitalize="characters">
     <div id="name-hint" class="text-xs text-[#5f6368] mt-1">文件名与云端文件夹将写作：<b>${esc(fileSlug(c.name) || 'ZHANG_SAN')}</b>。输入中文会自动转拼音（首字作姓，复姓请手动改）。</div>
     <div class="grid grid-cols-2 gap-3">
-      <div><label class="label">跟进状态</label><select name="status" class="input">${STATUSES.map((s) => `<option ${c.status === s.v ? 'selected' : ''}>${s.v}</option>`).join('')}</select></div>
+      <div><label class="label">跟进状态（自动）</label><div class="input flex items-center" style="background:#f1f3f4"><span class="chip ${statusCls(client ? clientStatus(client).v : '新客户')}">${client ? clientStatus(client).v : '新客户'}</span></div></div>
       <div><label class="label">联系电话 / Teléfono</label><input name="phone" type="tel" class="input" value="${esc(c.phone || '')}"></div>
     </div>
     <label class="label">医疗卡号 / Nº tarjeta sanitaria</label>
@@ -211,7 +211,7 @@ export function renderClientDetail(root, id) {
       <div class="flex items-start gap-3">
         <div class="w-14 h-14 rounded-full bg-[#1a73e8] text-white flex items-center justify-center text-2xl shrink-0">${esc((c.name || '?').slice(0, 1))}</div>
         <div class="min-w-0 flex-1">
-          <div class="flex flex-wrap items-center gap-2"><h2 class="text-xl font-medium">${esc(c.name)}</h2><span class="chip ${statusCls(c.status)}">${esc(c.status)}</span></div>
+          <div class="flex flex-wrap items-center gap-2"><h2 class="text-xl font-medium">${esc(c.name)}</h2><span class="chip ${statusCls(clientStatus(c).v)}" title="${esc(clientStatus(c).why)}">${esc(clientStatus(c).v)}</span><span class="text-xs text-[#5f6368]">${esc(clientStatus(c).why)}</span></div>
           <div class="text-sm text-[#5f6368] mt-0.5">${c.phone ? `<a class="text-[#1a73e8]" href="tel:${esc(c.phone)}">${esc(c.phone)}</a>` : '—'}</div>
         </div>
         <div class="flex gap-2 shrink-0">

@@ -107,10 +107,10 @@ export const MED_FIELDS = [
   { k: 'notes', zh: '备注：吸烟、饮酒、吸毒、其他信息', es: 'Observaciones: tabaco, alcohol, drogas, otros' },
 ];
 export const STATUSES = [
-  { v: '新建', cls: 'bg-[#e8f0fe] text-[#1967d2]' },
-  { v: '跟进中', cls: 'bg-[#fef7e0] text-[#b06000]' },
-  { v: '成交', cls: 'bg-[#e6f4ea] text-[#137333]' },
-  { v: '暂停', cls: 'bg-[#f1f3f4] text-[#5f6368]' },
+  { v: '新客户', cls: 'bg-[#e8f0fe] text-[#1967d2]' },
+  { v: '跟进中', cls: 'bg-[#fce8e6] text-[#c5221f]' },
+  { v: '自行解决', cls: 'bg-[#e6f4ea] text-[#137333]' },
+  { v: '失联中', cls: 'bg-[#f1f3f4] text-[#5f6368]' },
 ];
 export const statusCls = (v) => (STATUSES.find((s) => s.v === v) || STATUSES[0]).cls;
 

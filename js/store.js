@@ -34,6 +34,20 @@ const notify = () => window.dispatchEvent(new Event('crm:render'));
 export const live = (col) => state[col].filter((r) => !r.deleted);
 export const getClient = (id) => live('clients').find((c) => c.id === id);
 
+// 跟进状态由行程自动判定（不手选）：
+//  新客户 = 没有任何行程；失联中 = 有行程但最近一年及未来都没有；
+//  近一年或未来有行程：只要有「陪同翻译」→ 跟进中；全是「检查」/「无翻译」→ 自行解决
+export function clientStatus(c) {
+  const evs = live('events').filter((e) => e.clientId === c.id);
+  if (!evs.length) return { v: '新客户', why: '还没有任何行程' };
+  const d = new Date(); d.setFullYear(d.getFullYear() - 1);
+  const since = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const recent = evs.filter((e) => e.date >= since);
+  if (!recent.length) return { v: '失联中', why: '超过一年没有任何行程' };
+  if (recent.some((e) => e.type !== 'exam' && e.type !== 'none')) return { v: '跟进中', why: '近一年或未来有陪同翻译行程' };
+  return { v: '自行解决', why: '近一年或未来只有「检查」或「无翻译」行程' };
+}
+
 export const DEFAULT_GENERAL = '请携带：居留证件、医疗卡、检查单或病历。';
 export const getGeneralNote = () => {
   const g = live('presets').find((p) => p.id === 'general');
