@@ -1,12 +1,14 @@
 # 工作日程与客户管理 PWA
 
-纯静态应用：HTML5 + Tailwind(CDN) + ES Module，无需构建。数据：LocalStorage 缓存 ⇄ GitHub JSON；文件：Google Drive。
+纯静态应用：HTML5 + ES Module + 预编译的 Tailwind 样式（css/tailwind.css），无需构建、不依赖任何外部 CDN。数据：LocalStorage 缓存 ⇄ GitHub JSON；文件：Google Drive。
 
 ## 目录
 ```
 index.html  manifest.json  sw.js
-js/  app.js(路由/同步状态/PWA)  store.js(本地状态)  sync.js(GitHub)  drive.js(Google Drive)
+js/  app.js(路由/同步状态/PWA)  store.js(本地状态+加密存放)  sync.js(GitHub)  drive.js(Google Drive)
      calendar.js(月/周/日/列表)  clients.js(客户+文件)  settings.js  util.js
+     crypto.js(加解密)  lock.js(安全锁/锁屏)  vendor/pinyin-pro.js(本地拼音库)
+css/tailwind.css(预编译样式)  tools/(重新生成样式用的配置，平时不需要)
 icons/
 ```
 
@@ -22,7 +24,7 @@ icons/
 4. 应用「设置」页填：令牌、仓库 `owner/repo`、分支（默认 main）、目录（默认 `data`）→「保存并立即同步」。
 5. 首次同步会在仓库创建 `data/clients.json`、`data/events.json`。
    - 使用经典 PAT 时需要 `repo` 权限范围。
-   - 单个 JSON 超过 1 MB 时，Contents API 不再返回内容（官方限制），届时需拆分数据。
+   - 读取用 Git Blob 接口（官方：支持到 100 MB），不再受 Contents 接口 1 MB 的限制。
 
 ## 配置 Google Drive
 1. https://console.cloud.google.com → 新建项目 → API 和服务 → 库 → 启用 **Google Drive API**。
@@ -39,16 +41,31 @@ icons/
 ### 注意
 - `drive.file` 只能访问**本应用创建**的文件；手动拖进该文件夹的文件不会被列出/预览。
 - 令牌模型无刷新令牌，约 1 小时过期，之后再次上传/预览会弹出授权窗口。
-- 同名客户会共用一个文件夹；如需区分，可在姓名后加数字，如 `ZHANG SAN 2`。
+- 云端文件夹 = 姓名拼音_出生年份（如 `ZHANG_SAN_1960`；没填生日就只有拼音）。**一人一个文件夹**：名字已被别的客户用过、或 Drive 里已有同名文件夹，就加序号（`ZHANG_SAN_1960_2`），绝不复用。旧客户已建好的文件夹不改名。
+- 更换 Google 账户 / OAuth 客户端 ID 后：新账户里看不到旧账户上传的文件（`drive.file` 只能访问**本应用在该 OAuth 客户端下**创建的文件）。设置页换客户端 ID 时会清掉缓存的根文件夹编号，下次上传在新账户重建；旧文件的预览会提示「找不到」。
 
 ## 同步规则
 - 逐条记录比较 `updatedAt`，新者胜；删除以墓碑（`deleted:true`）传播。
 - 多设备同时编辑同一条记录时，以后保存者为准（不做字段级合并）。
 - 离线可读写；联网/回到前台/修改后 4 秒自动同步，亦可手动点「同步」。
 
-## 隐私
-含医疗信息（欧盟 GDPR 属特殊类别数据）：数据仓库保持 Private，令牌最小授权并设有效期，
-令牌明文存在本机浏览器 LocalStorage，勿在公用设备登录。
+## 隐私与安全
+含医疗信息（欧盟 GDPR 属特殊类别数据）：数据仓库保持 Private，令牌最小授权并设有效期。
+
+**安全锁与加密（设置页启用，默认关闭）**
+- 密码 → PBKDF2-HMAC-SHA256（60 万次迭代）→ AES-GCM 256 位密钥，全部用浏览器自带 Web Crypto。密码只在本机使用，不上传，**无法找回**。
+- 本机：客户、行程、医院医生、令牌、API 密钥全部加密后才写入 LocalStorage；未解锁时内存里没有任何客户数据，也不会写入（防止空数据覆盖）。
+- 云端：每条记录单独加密成 `{id, updatedAt, enc}`，GitHub 上看不到姓名、病史、备注；`id`（随机编号）和 `updatedAt`（修改时间）仍是明文，用来合并；删除标记 `{id, deleted, updatedAt}` 不含内容。密文绑定记录位置（AES-GCM 的附加认证数据），被改动或调换都会解密失败。
+- 云端另有 `crypto.json`：只存盐、迭代次数、校验密文，不含密码。多台设备输入同一个密码即可互相同步。
+- 闲置自动锁定（默认 10 分钟，可选 1/5/10/30/60/从不）；顶栏 🔒 可立即锁定。
+- 更改密码：用旧密钥读、新密钥写，**最后**才更新 `crypto.json`；中途断网可重试（沿用同一把盐）。其他设备同步时会提示输入新密码。
+- 加密备份（设置页）：用你设的密码加密，自带随机盐，换设备也能打开；备份里不含令牌和密钥。
+- 没有覆盖到的：设备本身被恶意软件控制、你自己忘记密码、`id` 与修改时间的泄露（可看出记录数量和修改频率）。
+- **启用加密不会抹掉 GitHub 旧提交历史里的明文。** 想彻底干净，请新建一个数据仓库、先启用加密再同步，确认无误后删除旧仓库。
+- 页面不再从外部 CDN 加载脚本（Tailwind 已预编译，拼音库已本地化）；仍会加载 Google 官方的登录脚本与地图脚本（用到相应功能时）。
+- 翻译请求把密钥放在 `x-goog-api-key` 请求头（Google 官方建议，不放网址里）；若浏览器预检不接受，自动退回网址参数方式。
+
+**彻底删除客户**：客户详情 →「删除」，可一并永久删除 Drive 里的客户文件夹（`files.delete`，不进回收站）和该客户全部行程；需输入「删除」确认。
 
 ## 地址联想、科室库、档案互译（v4）
 

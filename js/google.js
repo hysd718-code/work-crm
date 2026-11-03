@@ -78,14 +78,20 @@ export function attachAddress(input) {
 
 /* ---------------- Cloud Translation Basic v2 ---------------- */
 // 只发送传入的医疗文本；姓名/电话/卡号不会经过这里
+let keyInHeaderFails = false; // 若浏览器预检拒绝自定义请求头，本次打开期间退回网址参数方式
 export async function translate(text, from, to) {
   if (!hasKey()) throw new Error('未填写 Google API 密钥');
   if (!navigator.onLine) throw new Error('离线');
-  const r = await fetch(`https://translation.googleapis.com/language/translate/v2?key=${encodeURIComponent(state.settings.googleApiKey)}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ q: [text], source: from, target: to, format: 'text' }),
-  });
+  const ep = 'https://translation.googleapis.com/language/translate/v2';
+  const key = state.settings.googleApiKey;
+  const body = JSON.stringify({ q: [text], source: from, target: to, format: 'text' });
+  let r;
+  // Google 官方建议密钥放在 x-goog-api-key 请求头里，不要放网址里（网址会出现在日志、浏览器历史中）
+  if (!keyInHeaderFails) {
+    try { r = await fetch(ep, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body }); }
+    catch { keyInHeaderFails = true; }
+  }
+  if (!r) r = await fetch(`${ep}?key=${encodeURIComponent(key)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
   if (!r.ok) {
     let m = '';
     try { m = (await r.json()).error?.message || ''; } catch { /* ignore */ }

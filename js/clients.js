@@ -1,5 +1,5 @@
 // 客户管理：列表 / 表单（姓名=拼音，医疗信息中西双语）/ 档案详情 / 文件上传（拍照或选文件 + 智能重命名 + Google Drive）
-import { state, live, getClient, save, remove, hospitalOf, getGeneralNote, clientStatus } from './store.js';
+import { state, live, getClient, save, remove, purgeClient, lockEnabled, hospitalOf, getGeneralNote, clientStatus } from './store.js';
 import { EV_TYPES, evType, isPast, openEventDetail } from './calendar.js';
 import { $, $$, esc, openModal, confirmDialog, toast, normName, toPinyinName, fileSlug, todayStr, fmtSize, FILE_TYPES, REPORT_KINDS, MED_FIELDS, STATUSES, statusCls, buildFileName, parseBirth, fmtBirth, ageOf } from './util.js';
 import * as Drive from './drive.js';
@@ -143,7 +143,7 @@ export function openClientForm(client, { prefillName = '', onSaved } = {}) {
     const birth = f.birth.trim() ? parseBirth(f.birth) : '';
     if (birth === null) return toast('生日格式应为 日/月/年，例如 25/03/1980，且不能是未来日期', 'error');
     if (live('clients').some((x) => x.id !== c.id && x.name === name)) {
-      if (!(await confirmDialog(`已存在同名客户「${name}」。\n同名客户会共用同一个云端文件夹，仍要保存吗？`))) return;
+      if (!(await confirmDialog(`已存在同名客户「${name}」。\n两位客户的云端文件夹会分开建立（名称带出生年份或序号），但请务必在「生日」栏填写出生日期，避免以后搞混。仍要保存吗？`))) return;
     }
     const flags = Object.fromEntries(Object.entries(auto).map(([n, v]) => [n + '_auto', v]));
     const rec = save('clients', { ...c, ...f, ...flags, birth, idNo: f.idNo.trim().toUpperCase(), name, pinyin: fileSlug(name), files: c.files || [] });
@@ -282,16 +282,47 @@ export function renderClientDetail(root, id) {
   </div>`;
 
   $('#d-edit', root).onclick = () => openClientForm(c);
-  $('#d-del', root).onclick = async () => {
-    if (!(await confirmDialog(`确定删除客户「${c.name}」？\n其已关联的行程会保留但显示为已删除客户。\nDrive 中的文件不会被删除。`, { ok: '删除', danger: true }))) return;
-    remove('clients', c.id);
-    toast('已删除');
-    location.hash = '#/clients';
-  };
+  $('#d-del', root).onclick = () => openPurgeDialog(c, evs.length);
   $$('details[data-y]', root).forEach((d) => d.addEventListener('toggle', () => { d.open ? openYears.add(d.dataset.y) : openYears.delete(d.dataset.y); }));
   $$('[data-sev]', root).forEach((b) => { b.onclick = () => openEventDetail(b.dataset.sev); });
   bindUpload(root, c);
   $$('[data-f]', root).forEach((b) => (b.onclick = () => fileAction(c, b.dataset.f, b.dataset.id)));
+}
+
+/* ================= 彻底删除客户 ================= */
+function openPurgeDialog(c, evCount) {
+  const hasFolder = !!c.driveFolderId;
+  const m = openModal(`
+  <form class="p-5" autocomplete="off">
+    <h2 class="text-lg font-medium text-[#d93025]">删除客户「${esc(c.name)}」</h2>
+    <p class="text-sm mt-2">删除后<b>无法恢复</b>。请选择要一并清除的内容：</p>
+    <label class="flex items-start gap-2 text-sm mt-3"><input type="checkbox" name="drive" class="mt-1" ${hasFolder ? 'checked' : 'disabled'}><span><b>Google Drive 里该客户的文件夹和全部文件</b>（永久删除，不进回收站）${hasFolder ? '' : '<br><span class="text-[#5f6368]">这位客户还没有上传过文件。</span>'}</span></label>
+    <label class="flex items-start gap-2 text-sm mt-3"><input type="checkbox" name="events" class="mt-1" ${evCount ? 'checked' : 'disabled'}><span><b>该客户的 ${evCount} 条行程</b>（行程里带有姓名和备注）。不勾选的话，行程会保留，并继续显示这位客户的姓名。</span></label>
+    <p class="text-xs text-[#5f6368] mt-3">${lockEnabled() ? '云端数据已加密，下次同步时这位客户会被标记为已删除。' : '提示：没有启用加密时，GitHub 的提交历史里仍保留旧版本；启用安全锁并改用新的数据仓库后才能避免。'}</p>
+    <label class="label">为防误点，请输入「删除」两个字</label>
+    <input name="confirm" class="input" autocomplete="off">
+    <div id="pg-err" class="text-sm text-[#d93025] mt-2 min-h-[20px]"></div>
+    <div class="flex justify-end gap-2 mt-3"><button type="button" class="btn" data-close>取消</button><button type="submit" class="btn btn-danger">永久删除</button></div>
+  </form>`);
+  const form = $('form', m.el), err = $('#pg-err', m.el);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (form.elements.confirm.value.trim() !== '删除') return (err.textContent = '请输入「删除」两个字');
+    const btn = $('button[type=submit]', m.el);
+    btn.disabled = true; btn.textContent = '删除中…';
+    try {
+      if (form.elements.drive.checked && c.driveFolderId) {
+        try { await Drive.deleteForever(c.driveFolderId); } catch (ex) { if (ex.status !== 404) throw ex; } // 404：文件夹已不在（或属于以前的 Drive 账户），跳过
+      }
+      purgeClient(c.id, { withEvents: form.elements.events.checked });
+      m.close();
+      toast('已删除', 'ok');
+      location.hash = '#/clients';
+    } catch (ex) {
+      err.textContent = 'Drive 删除失败，客户资料没有被删除：' + (ex.message || ex);
+      btn.disabled = false; btn.textContent = '永久删除';
+    }
+  };
 }
 
 /* ================= 上传：拍照/选文件 + 智能重命名 ================= */
@@ -368,6 +399,7 @@ function bindUpload(root, c) {
       const latest = getClient(c.id) || c;
       latest.files = [...(latest.files || []), { id: meta.id, name, type: typeI.value, sub: subValue(), date: dateI.value || todayStr(), mime: meta.mimeType || f2.type, size: meta.size || f2.size, link: meta.webViewLink || '', uploadedAt: new Date().toISOString() }];
       latest.driveFolderId = c.driveFolderId;
+      latest.driveFolderName = c.driveFolderName;
       save('clients', latest);
       toast('已上传：' + name, 'ok');
     } catch (err) {
@@ -464,6 +496,6 @@ async function fileAction(c, action, fid) {
       toast('已删除');
     }
   } catch (e) {
-    toast(e.message, 'error', 5000);
+    toast(e.status === 404 ? '在当前的 Google Drive 账户里找不到这个文件（可能是更换 Drive 账户之前上传的）' : e.message, 'error', 6000);
   }
 }

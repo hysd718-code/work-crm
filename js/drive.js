@@ -1,6 +1,6 @@
 // Google Drive：GIS 令牌模型 + Drive REST v3（scope = drive.file）
 // 目录结构：Work_CRM_Storage / <客户拼音> / <重命名后的文件>
-import { state, saveSettings } from './store.js';
+import { state, saveSettings, live } from './store.js';
 
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const ROOT_NAME = 'Work_CRM_Storage';
@@ -76,13 +76,33 @@ async function ensureFolder(name, parentId) {
   return (await findFolder(name, parentId)) || (await createFolder(name, parentId));
 }
 
-// 返回客户文件夹 ID；会缓存根目录 ID（settings）与客户目录 ID（client.driveFolderId，随 JSON 同步）
+// 文件夹名 = 姓名拼音_出生年份（如 ZHANG_SAN_1960）；没填生日就只有拼音。
+// 保证"一人一个文件夹"：名字已被别的客户用过，或 Drive 里已有同名文件夹（别的客户/已删除客户留下的），就加序号 _2、_3…，绝不复用。
+const folderBase = (c) => {
+  const slug = c.pinyin || 'UNKNOWN';
+  const y = String(c.birth || '').slice(0, 4);
+  return /^\d{4}$/.test(y) ? `${slug}_${y}` : slug;
+};
+async function uniqueFolderName(base, root, client) {
+  const used = new Set(live('clients').filter((x) => x.id !== client.id && x.driveFolderId).map((x) => x.driveFolderName || x.pinyin)); // 旧客户没记文件夹名，当年就是拼音
+  for (let n = 1; n < 100; n++) {
+    const name = n === 1 ? base : `${base}_${n}`;
+    if (used.has(name)) continue;
+    if (await findFolder(name, root)) continue;
+    return name;
+  }
+  throw new Error('无法生成不重复的文件夹名，请检查 Drive 里是否有大量同名文件夹');
+}
+
+// 返回客户文件夹 ID；会缓存根目录 ID（settings）与客户目录 ID/名称（client.driveFolderId / driveFolderName，随 JSON 同步）
 export async function ensureClientFolder(client, { fresh = false } = {}) {
   let root = fresh ? null : state.settings.driveRootId;
   if (!root) { root = await ensureFolder(ROOT_NAME, 'root'); saveSettings({ driveRootId: root }); }
   if (!fresh && client.driveFolderId) return client.driveFolderId;
-  const id = await ensureFolder(client.pinyin || 'UNKNOWN', root);
+  const name = await uniqueFolderName(folderBase(client), root, client);
+  const id = await createFolder(name, root);
   client.driveFolderId = id;
+  client.driveFolderName = name;
   return id;
 }
 
@@ -116,6 +136,11 @@ export async function renameFile(fileId, name) {
     body: JSON.stringify({ name }),
   });
   return r.json();
+}
+
+// 永久删除（不进回收站）。对文件夹：连同里面由你拥有的内容一起删。官方：files.delete 永久删除，drive.file 范围即可授权。
+export async function deleteForever(fileId) {
+  await api(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
 }
 
 export async function trashFile(fileId) {

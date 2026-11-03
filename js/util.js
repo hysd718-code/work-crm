@@ -58,11 +58,11 @@ export function confirmDialog(message, { ok = '确定', cancel = '取消', dange
   });
 }
 
-// ---- 拼音（pinyin-pro 经 CDN 懒加载；失败则退化为去音标的大写字母数字）----
+// ---- 拼音（pinyin-pro 已打包成本地文件 js/vendor/pinyin-pro.js，不再从 CDN 加载；失败则退化为去音标的大写字母数字）----
 let pp = null;
 async function loadPinyin() {
   if (pp !== null) return pp;
-  try { pp = await import('https://cdn.jsdelivr.net/npm/pinyin-pro/+esm'); } catch { pp = false; }
+  try { pp = await import('./vendor/pinyin-pro.js'); } catch { pp = false; }
   return pp;
 }
 // 姓名规范：大写拼音，姓与名之间/多个词之间仅留一个空格，例如 "ZHANG SAN"

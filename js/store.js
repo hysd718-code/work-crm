@@ -1,5 +1,6 @@
 // 本地状态 + LocalStorage 缓存。每条记录带 id / updatedAt / deleted（墓碑），便于双向合并同步。
 import { uid } from './util.js';
+import { isEnc, deriveKey, encryptText, decryptText, makeCheck, verifyCheck, newSalt, DEFAULT_ITER } from './crypto.js';
 
 const K = {
   clients: 'crm.clients.v1',
@@ -10,8 +11,15 @@ const K = {
   exams: 'crm.exams.v1',
   settings: 'crm.settings.v1',
   meta: 'crm.meta.v1',
+  lock: 'crm.lock.v1', // 安全锁配置：盐、迭代次数、校验密文、自动锁定分钟数（不含任何密码或密钥）
 };
-const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d; } catch { return d; } };
+export const COLS = ['clients', 'events', 'presets', 'hospitals', 'doctors', 'exams'];
+// 已加密的内容在未解锁时读不出来，先当作空；解锁后由 unlockStore 填入
+const load = (k, d) => {
+  const v = localStorage.getItem(k);
+  if (v == null || isEnc(v)) return d;
+  try { return JSON.parse(v) ?? d; } catch { return d; }
+};
 
 export const state = {
   clients: load(K.clients, []),
@@ -28,7 +36,106 @@ export const state = {
   meta: load(K.meta, { lastSync: null }),
 };
 
-const persist = (col) => localStorage.setItem(K[col], JSON.stringify(state[col]));
+/* ================= 安全锁：本机数据加密存放 =================
+ * 未启用：和以前一样明文写 LocalStorage。
+ * 已启用：写入前用内存里的密钥加密（异步，按顺序排队）；未解锁时一律不写，防止空数据覆盖真实数据。 */
+export const getLockCfg = () => { try { return JSON.parse(localStorage.getItem(K.lock)); } catch { return null; } };
+let cryptoKey = null;
+let writeChain = Promise.resolve();
+export const lockEnabled = () => !!getLockCfg();
+export const isLocked = () => lockEnabled() && !cryptoKey;
+export const getKey = () => cryptoKey;
+export const flushWrites = () => writeChain;
+
+function persistRaw(k, value) {
+  if (!lockEnabled()) { localStorage.setItem(k, JSON.stringify(value)); return; }
+  if (!cryptoKey) return;
+  const text = JSON.stringify(value), key = cryptoKey; // 先拍下快照，再排队加密写入
+  writeChain = writeChain
+    .then(async () => { localStorage.setItem(k, await encryptText(key, text, 'local:' + k)); })
+    .catch((e) => console.error('加密写入失败', e));
+}
+const persist = (col) => persistRaw(K[col], state[col]);
+const persistAll = () => { COLS.forEach(persist); persistRaw(K.settings, state.settings); };
+
+async function readStored(key, k, d) {
+  const v = localStorage.getItem(k);
+  if (v == null) return d;
+  if (isEnc(v)) return JSON.parse(await decryptText(key, v, 'local:' + k));
+  try { return JSON.parse(v) ?? d; } catch { return d; }
+}
+
+// 用密码解锁：成功返回 true，密码不对返回 false
+export async function unlockStore(pass) {
+  const cfg = getLockCfg();
+  if (!cfg) return true;
+  const key = await deriveKey(pass, cfg.salt, cfg.iter);
+  if (!(await verifyCheck(key, cfg.check))) return false;
+  const loaded = {};
+  for (const col of COLS) loaded[col] = await readStored(key, K[col], []);
+  const st = await readStored(key, K.settings, {});
+  for (const col of COLS) state[col] = loaded[col];
+  Object.assign(state.settings, st);
+  cryptoKey = key;
+  persistAll(); // 若有残留的明文项，顺手转成密文
+  return true;
+}
+
+// 只验证密码、不重新加载数据（"软锁定"后再次解锁用）
+export async function verifyPass(pass) {
+  const cfg = getLockCfg();
+  if (!cfg) return true;
+  return verifyCheck(await deriveKey(pass, cfg.salt, cfg.iter), cfg.check);
+}
+
+// 启用：remoteCfg 为云端已有的加密设置时，沿用它的盐并验证密码；否则新建
+export async function enableLock(pass, remoteCfg = null) {
+  let cfg, key;
+  if (remoteCfg) {
+    key = await deriveKey(pass, remoteCfg.salt, remoteCfg.iter);
+    if (!(await verifyCheck(key, remoteCfg.check))) throw new Error('密码与云端已设置的不一致');
+    cfg = { v: 1, salt: remoteCfg.salt, iter: remoteCfg.iter, check: remoteCfg.check, idleMin: 10 };
+  } else {
+    const salt = newSalt();
+    key = await deriveKey(pass, salt, DEFAULT_ITER);
+    cfg = { v: 1, salt, iter: DEFAULT_ITER, check: await makeCheck(key), idleMin: 10 };
+  }
+  cryptoKey = key;
+  localStorage.setItem(K.lock, JSON.stringify(cfg)); // 先写配置，之后 persist 才走加密分支
+  persistAll();
+  await writeChain;
+}
+
+// 采用云端的新密码（别的设备改了密码之后，本设备输入新密码）
+export async function adoptRemoteLock(pass, remoteCfg) {
+  const key = await deriveKey(pass, remoteCfg.salt, remoteCfg.iter);
+  if (!(await verifyCheck(key, remoteCfg.check))) return false;
+  const old = getLockCfg() || {};
+  cryptoKey = key;
+  localStorage.setItem(K.lock, JSON.stringify({ v: 1, salt: remoteCfg.salt, iter: remoteCfg.iter, check: remoteCfg.check, idleMin: old.idleMin ?? 10 }));
+  persistAll();
+  await writeChain;
+  return true;
+}
+
+// 准备新密码（不立即生效）：返回 {cfg, key}；同步成功后再 applyNewLock
+export async function prepareNewLock(pass, salt = null) {
+  salt = salt || newSalt(); // 上次换密码中途断了的话，沿用同一把盐，这样同一个新密码能解开已改写的那部分云端数据
+  const key = await deriveKey(pass, salt, DEFAULT_ITER);
+  const old = getLockCfg() || {};
+  return { key, cfg: { v: 1, salt, iter: DEFAULT_ITER, check: await makeCheck(key), idleMin: old.idleMin ?? 10 } };
+}
+export async function applyNewLock({ key, cfg }) {
+  cryptoKey = key;
+  localStorage.setItem(K.lock, JSON.stringify(cfg));
+  persistAll();
+  await writeChain;
+}
+export function setIdleMin(n) {
+  const cfg = getLockCfg();
+  if (cfg) localStorage.setItem(K.lock, JSON.stringify({ ...cfg, idleMin: n }));
+}
+
 const notify = () => window.dispatchEvent(new Event('crm:render'));
 
 export const live = (col) => state[col].filter((r) => !r.deleted);
@@ -109,7 +216,7 @@ export function replaceAll(col, arr) {
 
 export function saveSettings(patch) {
   Object.assign(state.settings, patch);
-  localStorage.setItem(K.settings, JSON.stringify(state.settings));
+  persistRaw(K.settings, state.settings);
 }
 export function saveMeta(patch) {
   Object.assign(state.meta, patch);
@@ -137,4 +244,11 @@ export function importAll(text) {
 }
 export function clearLocal() {
   Object.values(K).forEach((k) => localStorage.removeItem(k));
+  cryptoKey = null;
+}
+
+// 彻底删除一位客户在本应用里的全部记录（云端文件夹由调用方另行删除）
+export function purgeClient(id, { withEvents = true } = {}) {
+  if (withEvents) live('events').filter((e) => e.clientId === id).forEach((e) => remove('events', e.id));
+  remove('clients', id);
 }

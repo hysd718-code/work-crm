@@ -1,14 +1,15 @@
-// Service Worker：本地资源预缓存 + CDN 资源运行时缓存；GitHub / Google API 一律走网络
-const VERSION = 'crm-v14';
+// Service Worker：本地资源预缓存 + 同源资源运行时缓存；GitHub / Google API 一律走网络
+const VERSION = 'crm-v15';
 const CORE = [
   './', 'index.html', 'manifest.json',
-  'js/app.js', 'js/util.js', 'js/store.js', 'js/sync.js', 'js/drive.js', 'js/calendar.js', 'js/clients.js', 'js/settings.js', 'js/google.js', 'js/library.js', 'js/share.js',
+  'js/app.js', 'js/util.js', 'js/store.js', 'js/sync.js', 'js/drive.js', 'js/calendar.js', 'js/clients.js', 'js/settings.js', 'js/google.js', 'js/library.js', 'js/share.js', 'js/crypto.js', 'js/lock.js', 'css/tailwind.css',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
 ];
 const NETWORK_ONLY = ['api.github.com', 'googleapis.com', 'accounts.google.com', 'www.google.com', 'gstatic.com'];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(CORE)).then(() => self.skipWaiting()));
+  // cache:'reload'：安装时绕过浏览器 HTTP 缓存，避免把新旧文件混在一起缓存
+  e.waitUntil(caches.open(VERSION).then((c) => c.addAll(CORE.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -28,7 +29,7 @@ self.addEventListener('fetch', (e) => {
     e.respondWith(fetch(req).catch(() => caches.match('index.html')));
     return;
   }
-  // 其余（本地脚本 + Tailwind/pinyin-pro CDN）：先读缓存，同时后台更新
+  // 其余（本地脚本、样式、本地拼音库）：先读缓存，同时后台更新
   e.respondWith(
     caches.match(req).then((hit) => {
       const net = fetch(req).then((res) => {

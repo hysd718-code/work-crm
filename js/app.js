@@ -1,11 +1,12 @@
 // 入口：路由、导航、同步状态、PWA 注册
-import { state, saveSettings, live, migrateLegacyPresets } from './store.js';
+import { state, saveSettings, live, migrateLegacyPresets, lockEnabled, isLocked } from './store.js';
 import { $, $$, toast } from './util.js';
 import { renderCalendar, openEventForm, gotoDate, isPast } from './calendar.js';
 import { renderClients, renderClientDetail, openClientForm } from './clients.js';
 import { renderSettings } from './settings.js';
 import { renderLibrary } from './library.js';
 import { syncAll, syncConfigured, isSyncing } from './sync.js';
+import { bootLock, lockNow, promptRemoteKey } from './lock.js';
 
 const view = $('#view');
 const TITLES = { calendar: '日程', clients: '客户', client: '客户档案', library: '医院与医生', settings: '设置与同步' };
@@ -59,11 +60,20 @@ window.addEventListener('crm:sync-end', () => migrateLegacyPresets()); // 其他
 window.addEventListener('crm:sync-end', (e) => setSyncUi(e.detail.ok ? 'ok' : 'err', e.detail.ok ? '' : e.detail.error));
 
 async function doSync(manual) {
+  if (isLocked()) return; // 锁定时内存里没有数据，绝不能同步
   if (!syncConfigured()) { if (manual) { toast('请先配置 GitHub 同步', 'error'); location.hash = '#/settings'; } return; }
   if (!navigator.onLine) { if (manual) toast('当前离线，联网后将自动同步', 'error'); return; }
-  try { await syncAll(); if (manual) toast('同步完成', 'ok'); } catch (e) { toast('同步失败：' + e.message, 'error', 6000); }
+  try { await syncAll(); if (manual) toast('同步完成', 'ok'); }
+  catch (e) {
+    if (e.code === 'REMOTE_KEY_CHANGED') { if (await promptRemoteKey(e.remote)) return doSync(manual); return; } // 别的设备改了密码：输入新密码后重试
+    toast('同步失败：' + e.message, 'error', 6000);
+  }
 }
 $('#sync-btn').onclick = () => doSync(true);
+const lockBtn = $('#lock-btn');
+const paintLock = () => lockBtn.classList.toggle('hidden', !lockEnabled());
+lockBtn.onclick = () => lockNow();
+window.addEventListener('crm:lockchanged', paintLock);
 
 let timer = null;
 window.addEventListener('crm:changed', (e) => {
@@ -91,6 +101,8 @@ setInterval(() => view.querySelectorAll('[data-ev]').forEach((b) => {
   const e = live('events').find((x) => x.id === b.dataset.ev);
   if (e) b.classList.toggle(b.classList.contains('ev-chip') ? 'past' : 'is-past', isPast(e));
 }), 60000);
+await bootLock(); // 启用了安全锁就先显示锁屏，输对密码后才往下走（此前内存里没有任何客户数据）
+paintLock();
 migrateLegacyPresets();
 render();
 setSyncUi('ok');

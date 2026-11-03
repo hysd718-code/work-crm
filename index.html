@@ -11,7 +11,6 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="工作CRM">
-<script src="https://cdn.tailwindcss.com"></script>
 <style>
   :root{--blue:#1a73e8;--blue-d:#1765cc;--line:#dadce0;--muted:#5f6368;--bg:#f8f9fa}
   html,body{height:100%}
@@ -49,6 +48,7 @@
   @keyframes spin{to{transform:rotate(360deg)}}
   .spin{animation:spin 1s linear infinite}
 </style>
+<link rel="stylesheet" href="css/tailwind.css">
 </head>
 <body class="bg-white">
 <div class="flex h-full">
@@ -76,6 +76,7 @@
       <h1 id="page-title" class="text-lg md:text-xl font-normal text-[#3c4043] truncate">日程</h1>
       <div class="ml-auto flex items-center gap-2">
         <span id="offline-badge" class="chip bg-[#fef7e0] text-[#b06000] hidden">离线</span>
+        <button id="lock-btn" class="btn btn-sm hidden" title="立即锁定" aria-label="立即锁定">🔒</button>
         <button id="sync-btn" class="btn btn-sm" title="立即同步">
           <svg id="sync-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 1-15.5 6.2M3 12a9 9 0 0 1 15.5-6.2M18.5 2v4h-4M5.5 22v-4h4"/></svg>
           <span id="sync-label">同步</span>
@@ -99,6 +100,7 @@
 <button id="fab" class="md:hidden fixed right-4 bottom-20 w-14 h-14 rounded-2xl bg-[#1a73e8] text-white text-3xl shadow-lg flex items-center justify-center" style="margin-bottom:env(safe-area-inset-bottom)">＋</button>
 
 <div id="modal-root"></div>
+<div id="lock-root"></div>
 <div id="toast-root" class="fixed left-1/2 -translate-x-1/2 bottom-24 md:bottom-8 z-[100] flex flex-col gap-2 items-center pointer-events-none"></div>
 
 <script type="module" src="js/app.js"></script>
